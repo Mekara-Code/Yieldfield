@@ -1,0 +1,52 @@
+{
+  "name": "yieldfield-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Accounts, saves and live updates for Yieldfield (the Unreal game): Next.js + Prisma/PostgreSQL + WebSocket + JWT. Runs as its own server, or on Vercel.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx server.ts",
+    "build": "prisma generate && next build",
+    "vercel-build": "prisma generate && prisma migrate deploy && next build",
+    "start": "NODE_ENV=production tsx server.ts",
+    "db:start": "tsx scripts/db.ts start",
+    "db:migrate": "tsx scripts/db.ts migrate",
+    "db:studio": "tsx scripts/db.ts studio",
+    "setup": "tsx scripts/setup.ts",
+    "typecheck": "tsc --noEmit",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "bcryptjs": "3.0.3",
+    "dotenv": "18.0.4",
+    "jose": "6.2.12",
+    "next": "16.3.7",
+    "pg": "8.23.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tsx": "4.23.15",
+    "ws": "8.22.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.3",
+    "@types/pg": "8.23.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/ws": "8.18.2",
+    "embedded-postgres": "18.4.0-beta.17",
+    "prisma": "7.10.0",
+    "typescript": "5.9.3"
+  },
+  "allowScripts": {
+    "@embedded-postgres/linux-x64@18.4.0-beta.17": true,
+    "@prisma/engines@7.10.0": true,
+    "esbuild@0.28.2": true,
+    "prisma@7.10.0": true
+  }
+}

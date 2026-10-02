@@ -1,0 +1,80 @@
+// Diana's farm: players, their sign-ins, their farms (the game's whole save plus the
+// numbers the site shows), the animals on each farm and what happened there.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String      @id @default(cuid())
+  username     String      @unique
+  email        String      @unique
+  passwordHash String
+  createdAt    DateTime    @default(now())
+  lastLoginAt  DateTime?
+  farm         Farm?
+  sessions     Session[]
+  events       FarmEvent[]
+}
+
+/// A sign-in on one device: the refresh token (stored hashed) that keeps it signed in.
+model Session {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  client    String // "game" or "web"
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  @@index([userId])
+}
+
+model Farm {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Goes up by one with every save.
+  revision  Int      @default(0)
+  day       Int      @default(1)
+  coins     Int      @default(250)
+  /// The game's save as it sent it (see src/lib/farm.ts); null until the first save.
+  state     Json?
+  animals   Animal[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Kept in step with the save's animal list, so animals can be queried on their own.
+model Animal {
+  id           String   @id // the game's id for it
+  farmId       String
+  farm         Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  kind         String // Chicken, Sheep, Cow
+  name         String
+  boughtDay    Int
+  lastMilkedDay Int     @default(0)
+  lastShornDay Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@index([farmId])
+}
+
+/// Something that happened on a farm (sold the harvest, bought a cow...), for the activity feed.
+model FarmEvent {
+  id        BigInt   @id @default(autoincrement())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String
+  day       Int
+  data      Json
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}

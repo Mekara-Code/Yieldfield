@@ -1,0 +1,47 @@
+# On the VPS:   cp .env.production.example .env   (fill in the two secrets)
+#               docker compose up -d --build
+# PostgreSQL keeps its data in the "pgdata" volume. Put HTTPS in front (Caddyfile) before real players use it.
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: yieldfield
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      POSTGRES_DB: yieldfield
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yieldfield -d yieldfield"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://yieldfield:${DB_PASSWORD}@db:5432/yieldfield?schema=public
+      EMBEDDED_POSTGRES: "false"
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+    ports:
+      - "3000:3000"
+
+  # HTTPS for your domain (certificates are fetched automatically). Uncomment once the domain points here,
+  # and set the game's ServerUrl to https://your-domain (the game then talks wss:// on its own).
+  # caddy:
+  #   image: caddy:2
+  #   restart: unless-stopped
+  #   ports: ["80:80", "443:443"]
+  #   volumes: ["./Caddyfile:/etc/caddy/Caddyfile", "caddy:/data"]
+  #   depends_on: [app]
+
+volumes:
+  pgdata:
+  # caddy:

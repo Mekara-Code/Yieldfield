@@ -1,0 +1,4 @@
+# Replace with your domain. Caddy gets the certificate and passes the WebSocket through too.
+farm.example.com {
+	reverse_proxy app:3000
+}
