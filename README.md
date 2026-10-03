@@ -162,9 +162,11 @@ coin is offered only while it has one), the packs and their prices, the minutes 
 order (look again on the chain, credit by hand, cancel), giving a player BLOOM or gems, VIP plans,
 gem packs, and a player's VIP days and reputation.
 
-Who a player plays (Diana or Arash) is chosen at sign-up and kept on the account; changing it at the
-title screen costs 500 BLOOM. Accounts from before the choice
-choose once, free.
+Who a player plays (Diana, Arellah or Arash) is chosen once, at sign-up, and kept on the account
+(`User.character`; src/lib/game/defs.ts `CHARACTERS`, each a woman or a man). Changing it at the title
+screen costs gems: 600 for another character of the same gender, 1500 for the other gender (a husband
+or wife becomes one of the other gender with it). Accounts from before the choice choose once, free.
+`GET /api/character` lists the characters with what each would cost the player.
 
 ## Players' wallets (pay without an order, sign in with a wallet)
 

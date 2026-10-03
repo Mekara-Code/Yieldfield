@@ -264,6 +264,19 @@ export const DEFAULT_GEM_PACKS: GemPack[] = [
   { id: 'g3200', gems: 3200, bloom: 500, tag: 'Best value' },
 ];
 
+/**
+ * Who one can play (the game's PlayerCharacters, Config/DefaultGame.ini), each a woman or a man. Chosen
+ * once at sign-up; after that becoming another costs gems: CHARACTER_CHANGE_GEMS for one of the same
+ * gender, GENDER_CHANGE_GEMS for the other gender (src/lib/players.ts).
+ */
+export const CHARACTERS = [
+  { name: 'Diana', gender: 'female' },
+  { name: 'Arash', gender: 'male' },
+  { name: 'Arellah', gender: 'female' },
+] as const;
+export const CHARACTER_CHANGE_GEMS = 600;
+export const GENDER_CHANGE_GEMS = 1500;
+
 export const findCrop = (id: string) => CROPS.find((c) => c.id === id);
 export const findProduct = (id: string) => PRODUCTS.find((p) => p.id === id);
 export const findAnimal = (kind: string) => ANIMALS.find((a) => a.kind === kind);
@@ -299,5 +312,6 @@ export function publicDefs(gemPacks: GemPack[]) {
     skillResetSeconds: SKILL_RESET_SECONDS,
     combatPower: COMBAT_POWER,
     market: MARKET,
+    characters: { list: CHARACTERS, characterChangeGems: CHARACTER_CHANGE_GEMS, genderChangeGems: GENDER_CHANGE_GEMS },
   };
 }

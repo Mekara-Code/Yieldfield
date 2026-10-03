@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { prisma } from '../../../../lib/db';
 import { clientAddress, json, problem, publicOrigin, rateLimited, readBody, Username } from '../../../../lib/http';
-import { isCharacter } from '../../../../lib/players';
+import { CHARACTER_NAMES, isCharacter } from '../../../../lib/players';
 import { messageFor, normalizeAddress, shortAddress, tonPublicKey, verifyEvm, verifyTonProof, verifyTron } from '../../../../lib/wallets';
 
 export const runtime = 'nodejs';
@@ -21,7 +21,7 @@ const Body = z.object({
     .optional(),
   /** Signing in with a wallet that has no farm yet: the new farmer's name and who they play. */
   name: Username.optional(),
-  character: z.enum(['Diana', 'Arash']).optional(),
+  character: z.enum(CHARACTER_NAMES).optional(),
 });
 
 /** The website sends the wallet's signature: the wallet is linked, or signs the game in (or makes a farm for it). */

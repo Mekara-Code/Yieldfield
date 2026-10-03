@@ -60,7 +60,7 @@ export default function WalletPage() {
   const [signed, setSigned] = useState<Signed | null>(null);
   const [needsAccount, setNeedsAccount] = useState(false);
   const [name, setName] = useState('');
-  const [character, setCharacter] = useState<'Diana' | 'Arash'>('Diana');
+  const [character, setCharacter] = useState<'Diana' | 'Arellah' | 'Arash'>('Diana');
   const [done, setDone] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [here, setHere] = useState('');
@@ -189,11 +189,14 @@ export default function WalletPage() {
             <button aria-selected={character === 'Diana'} onClick={() => setCharacter('Diana')}>
               Diana · woman
             </button>
+            <button aria-selected={character === 'Arellah'} onClick={() => setCharacter('Arellah')}>
+              Arellah · woman
+            </button>
             <button aria-selected={character === 'Arash'} onClick={() => setCharacter('Arash')}>
               Arash · man
             </button>
           </div>
-          <p className="muted small">Chosen for good: changing later costs 500 BLOOM.</p>
+          <p className="muted small">Chosen once: later another character costs 600 gems, the other gender 1500.</p>
           <button className="button wide" disabled={busy || !/^[A-Za-z0-9_]{3,20}$/.test(name)} onClick={() => send(signed, { name, character })}>
             Make my farm
           </button>

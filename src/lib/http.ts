@@ -1,3 +1,4 @@
+import { CHARACTER_NAMES } from './players';
 import { z } from 'zod';
 import type { Tokens } from './auth';
 import { env } from './env';
@@ -83,7 +84,7 @@ export const RegisterBody = z.object({
   password: Password,
   client: ClientKind,
   /** Who they'll play (the game asks at sign-up); fixed after, but for a price. */
-  character: z.enum(['Diana', 'Arash']).optional(),
+  character: z.enum(CHARACTER_NAMES).optional(),
 });
 
 export const LoginBody = z.object({
