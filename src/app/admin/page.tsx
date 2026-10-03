@@ -15,11 +15,24 @@ interface Pack {
   usdCents: number;
   tag?: string;
 }
+interface VipPlan {
+  id: string;
+  days: number;
+  bloom: number;
+  tag?: string;
+}
 interface Settings {
   wallets: Record<string, string>;
   packs: Pack[];
   orderMinutes: number;
+  vipPlans: VipPlan[];
   networks: NetworkInfo[];
+}
+interface Standing {
+  reputation: number;
+  tier: { name: string };
+  vip: boolean;
+  vipUntil: string | null;
 }
 interface Order {
   id: string;
@@ -78,6 +91,11 @@ export default function AdminPage() {
   const [denied, setDenied] = useState<string | null>(null);
   const [grantName, setGrantName] = useState('');
   const [grantBloom, setGrantBloom] = useState('');
+  const [vipPlans, setVipPlans] = useState<VipPlan[]>([]);
+  const [playerName, setPlayerName] = useState('');
+  const [vipDays, setVipDays] = useState('');
+  const [repChange, setRepChange] = useState('');
+  const [player, setPlayer] = useState<{ username: string; standing: Standing } | null>(null);
 
   const loadOrders = useCallback(async (status: string) => {
     const { data } = await call<{ orders: Order[]; totals: Totals }>(`/api/admin/payments${status ? `?status=${status}` : ''}`);
@@ -98,6 +116,7 @@ export default function AdminPage() {
       setWallets(data.wallets);
       setPacks(data.packs);
       setMinutes(data.orderMinutes);
+      setVipPlans(data.vipPlans ?? []);
       await loadOrders('');
     })();
   }, [loadOrders]);
@@ -108,12 +127,13 @@ export default function AdminPage() {
     }
   }, [filter, settings, loadOrders]);
 
-  async function save(part: Partial<Pick<Settings, 'wallets' | 'packs' | 'orderMinutes'>>) {
+  async function save(part: Partial<Pick<Settings, 'wallets' | 'packs' | 'orderMinutes' | 'vipPlans'>>) {
     const { data, error } = await call<Settings>('/api/admin/settings', { method: 'PUT', body: JSON.stringify(part) });
     if (data) {
       setWallets(data.wallets);
       setPacks(data.packs);
       setMinutes(data.orderMinutes);
+      setVipPlans(data.vipPlans ?? []);
       setMessage('Saved');
     } else {
       setMessage(error);
@@ -147,6 +167,27 @@ export default function AdminPage() {
     setMessage(error ?? `${bloom > 0 ? 'Gave' : 'Took'} ${Math.abs(bloom)} BLOOM ${bloom > 0 ? 'to' : 'from'} ${grantName}`);
     if (!error) {
       setGrantBloom('');
+    }
+  }
+
+  async function adjustPlayer() {
+    const days = vipDays ? Number(vipDays) : 0;
+    const reputation = repChange ? Number(repChange) : 0;
+    if (!playerName || !Number.isInteger(days) || !Number.isInteger(reputation) || (days === 0 && reputation === 0)) {
+      setMessage('A player name, and whole numbers of VIP days or reputation');
+      return;
+    }
+    const { data, error } = await call<{ username: string; standing: Standing }>('/api/admin/player', {
+      method: 'POST',
+      body: JSON.stringify({ username: playerName, ...(days ? { vipDays: days } : {}), ...(reputation ? { reputation } : {}) }),
+    });
+    if (data) {
+      setPlayer(data);
+      setVipDays('');
+      setRepChange('');
+      setMessage(`${data.username}: ${data.standing.tier.name}, ${data.standing.reputation} reputation${data.standing.vip ? `, VIP until ${new Date(data.standing.vipUntil!).toLocaleDateString()}` : ''}`);
+    } else {
+      setMessage(error);
     }
   }
 
@@ -255,6 +296,74 @@ export default function AdminPage() {
             Give
           </button>
         </div>
+      </section>
+
+      <section className="card">
+        <h2>VIP plans</h2>
+        <p className="muted small">Bought in the game&apos;s journal (J) with BLOOM from the farm. VIP: a golden name, 1.5x reputation from tasks and one more task a day, +5% and bigger orders at the traders.</p>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Id</th>
+                <th>Days</th>
+                <th>BLOOM</th>
+                <th>Badge</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {vipPlans.map((p, i) => (
+                <tr key={i}>
+                  <td>
+                    <input value={p.id} onChange={(e) => setVipPlans(vipPlans.map((q, j) => (j === i ? { ...q, id: e.target.value } : q)))} />
+                  </td>
+                  <td>
+                    <input type="number" value={p.days} onChange={(e) => setVipPlans(vipPlans.map((q, j) => (j === i ? { ...q, days: Number(e.target.value) } : q)))} />
+                  </td>
+                  <td>
+                    <input type="number" value={p.bloom} onChange={(e) => setVipPlans(vipPlans.map((q, j) => (j === i ? { ...q, bloom: Number(e.target.value) } : q)))} />
+                  </td>
+                  <td>
+                    <input value={p.tag ?? ''} placeholder="—" onChange={(e) => setVipPlans(vipPlans.map((q, j) => (j === i ? { ...q, tag: e.target.value || undefined } : q)))} />
+                  </td>
+                  <td>
+                    <button className="button quiet" onClick={() => setVipPlans(vipPlans.filter((_, j) => j !== i))}>
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+          <button className="button quiet" onClick={() => setVipPlans([...vipPlans, { id: `vip${Date.now() % 100000}`, days: 30, bloom: 1900 }])}>
+            Add a plan
+          </button>
+          <button className="button" onClick={() => save({ vipPlans })}>
+            Save VIP plans
+          </button>
+        </div>
+      </section>
+
+      <section className="card">
+        <h2>A player&apos;s VIP and reputation</h2>
+        <p className="muted small">VIP days add to any VIP still running (negative takes days away). Reputation is added (negative takes it away). The game sees it within a few minutes.</p>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <input style={{ flex: 2, minWidth: 160 }} placeholder="player name" value={playerName} onChange={(e) => setPlayerName(e.target.value)} />
+          <input style={{ flex: 1, minWidth: 100 }} type="number" placeholder="VIP days" value={vipDays} onChange={(e) => setVipDays(e.target.value)} />
+          <input style={{ flex: 1, minWidth: 100 }} type="number" placeholder="reputation" value={repChange} onChange={(e) => setRepChange(e.target.value)} />
+          <button className="button" onClick={adjustPlayer}>
+            Apply
+          </button>
+        </div>
+        {player && (
+          <p className="muted small" style={{ marginTop: 10 }}>
+            {player.username}: {player.standing.tier.name} · {player.standing.reputation} reputation
+            {player.standing.vip && player.standing.vipUntil ? ` · VIP until ${new Date(player.standing.vipUntil).toLocaleDateString()}` : ' · not VIP'}
+          </p>
+        )}
       </section>
 
       <section className="card">

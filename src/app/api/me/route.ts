@@ -3,6 +3,7 @@ import { prisma } from '../../../lib/db';
 import { json, problem } from '../../../lib/http';
 import { isAdmin } from '../../../lib/players';
 import { isPlaying } from '../../../lib/presence';
+import { standing } from '../../../lib/reputation';
 
 export const runtime = 'nodejs';
 
@@ -24,5 +25,6 @@ export async function GET(request: Request) {
     admin: await isAdmin(claims),
     farm: user.farm && { day: user.farm.day, coins: user.farm.coins, revision: user.farm.revision, credits: user.farm.credits },
     playing: isPlaying(user.id, user.farm?.updatedAt),
+    standing: await standing(user),
   });
 }

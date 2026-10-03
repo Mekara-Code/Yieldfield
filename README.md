@@ -156,3 +156,30 @@ Linked wallets do two things:
 | `POST /api/wallet/deposits` | looks for payments from the player's wallets now → `{ credited, credits }` |
 
 `TRONGRID_API_KEY` (optional) raises TronGrid's rate limit.
+
+## Daily tasks, reputation and VIP
+
+**Daily tasks** (src/lib/tasks.ts): each player gets three a (UTC) day, made at their first look that
+day from what their farm can do then (its level, beds and animals) and the same all day; a VIP gets
+one more. Up to two are deliveries to the farm's traders (Gus the grocer: crops, Hattie: eggs, Molly:
+milk, Bruno the butcher: wool and leather), the rest farm work (water, plant, harvest, milk, shear,
+collect eggs, earn BLOOM selling, give premium feed). The game counts the progress (in the save:
+`taskDay`, `taskProgress`) and claims each task once it's done: the server adds its reputation (once
+per task: `TaskClaim`) and returns the experience for the game to add. Doing them all gives a bonus.
+
+**Reputation** (src/lib/reputation.ts) puts the player in a tier: Newcomer, Good Neighbor (100),
+Trusted Farmer (300), Respected (700), Renowned (1500), Valley Legend (3000). The tier sets how much
+more than the shipping bin the traders pay and how many pieces each buys a day, and (for later) how
+much BLOOM can be withdrawn a day and how many things listed on a market.
+
+**VIP** (`User.vipUntil`) is bought in the game's journal with BLOOM (spent through the farm's credits)
+or given by an admin: a golden name over the player's head, 1.5x reputation from tasks and one more
+task a day, +5% and 1.5x bigger orders at the traders, and (for later) double withdrawals and more
+listings. Plans (days, BLOOM) are set in /admin.
+
+| | |
+|---|---|
+| `GET /api/tasks` | today's tasks (claimed or not), the all-done bonus, the player's standing |
+| `POST /api/tasks/claim` | `{ day, id }` (`id`: `t0`... or `all`) → `{ xp, reputation, standing }`, once per task |
+| `GET /api/vip` / `POST /api/vip` | the standing and VIP plans / `{ plan }` → buys it with BLOOM |
+| `POST /api/admin/player` | `{ username, vipDays?, reputation? }` (admins) |

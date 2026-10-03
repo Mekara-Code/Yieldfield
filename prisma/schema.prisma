@@ -22,11 +22,17 @@ model User {
   character    String?
   /// Can open /admin (so can the names in ADMIN_USERNAMES).
   isAdmin      Boolean     @default(false)
+  /// Standing in the valley: earned with the daily tasks (src/lib/reputation.ts: tiers and what each allows).
+  reputation   Int         @default(0)
+  /// VIP until then (bought with BLOOM, or given by an admin); null or past: not VIP.
+  vipUntil     DateTime?
   farm         Farm?
   sessions     Session[]
   events       FarmEvent[]
   payments     Payment[]
   wallets      Wallet[]
+  dailyTasks   DailyTasks[]
+  taskClaims   TaskClaim[]
 }
 
 /// A sign-in on one device: the refresh token (stored hashed) that keeps it signed in.
@@ -71,6 +77,8 @@ model Animal {
   boughtDay    Int
   lastMilkedDay Int     @default(0)
   lastShornDay Int      @default(0)
+  /// Experience: every 10 levels it gives one more of what it gives.
+  xp           Int      @default(0)
   updatedAt    DateTime @updatedAt
 
   @@index([farmId])
@@ -157,4 +165,32 @@ model WalletRequest {
   expiresAt DateTime
   /// When the game collected its sign-in (a login request signs in once).
   usedAt    DateTime?
+}
+
+/// One player's daily tasks for one (UTC) day: made at the first look that day, from their farm then.
+model DailyTasks {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// YYYY-MM-DD, UTC.
+  day       String
+  tasks     Json
+  createdAt DateTime @default(now())
+
+  @@id([userId, day])
+}
+
+/// A daily task's reward, taken once: the experience the game adds and the reputation added here.
+model TaskClaim {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  day        String
+  /// The task's id that day ("t0", "t1"...), or "all" for finishing them all.
+  taskId     String
+  xp         Int
+  reputation Int
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, day, taskId])
+  @@index([userId, createdAt])
 }

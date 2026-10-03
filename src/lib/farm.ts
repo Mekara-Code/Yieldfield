@@ -25,6 +25,9 @@ export const AnimalSchema = z.looseObject({
   boughtDay: z.number().int().min(0).max(1_000_000),
   lastMilkedDay: z.number().int().min(0).max(1_000_000),
   lastShornDay: z.number().int().min(0).max(1_000_000),
+  // Since version 3.
+  xp: z.number().int().min(0).max(100_000_000).optional(),
+  lastFedDay: z.number().int().min(0).max(1_000_000).optional(),
 });
 
 export const FarmStateSchema = z.looseObject({
@@ -45,6 +48,10 @@ export const FarmStateSchema = z.looseObject({
   ownedPlots: z.array(z.number().int().min(0).max(255)).max(256).optional(),
   buildings: z.array(z.string().regex(/^[A-Za-z0-9_]{1,24}$/)).max(32).optional(),
   creditsSeen: z.number().int().min(-100_000_000).max(1_000_000_000).optional(),
+  // Since version 3: the daily tasks' progress (by task id) and what each trader bought, that (UTC) day.
+  taskDay: z.string().max(10).optional(),
+  taskProgress: z.record(z.string().max(8), Count).optional(),
+  traderSales: z.record(z.string().max(16), Count).optional(),
 });
 
 export type FarmState = z.infer<typeof FarmStateSchema>;
@@ -78,7 +85,7 @@ export async function saveFarm(userId: string, state: FarmState) {
     const ids = state.animals.map((a) => a.id);
     await tx.animal.deleteMany({ where: { farmId: farm.id, id: { notIn: ids } } });
     for (const a of state.animals) {
-      const fields = { kind: a.kind, name: a.name, boughtDay: a.boughtDay, lastMilkedDay: a.lastMilkedDay, lastShornDay: a.lastShornDay };
+      const fields = { kind: a.kind, name: a.name, boughtDay: a.boughtDay, lastMilkedDay: a.lastMilkedDay, lastShornDay: a.lastShornDay, xp: a.xp ?? 0 };
       await tx.animal.upsert({ where: { id: a.id }, update: fields, create: { id: a.id, farmId: farm.id, ...fields } });
     }
     return { revision: saved.revision, updatedAt: saved.updatedAt.toISOString(), credits: saved.credits };

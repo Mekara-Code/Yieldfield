@@ -4,6 +4,7 @@ import { prisma } from '../../../../lib/db';
 import { json, problem, readBody } from '../../../../lib/http';
 import { isNetwork, NETWORKS } from '../../../../lib/networks';
 import { isAdmin } from '../../../../lib/players';
+import { DEFAULT_VIP_PLANS, VipPlanSchema, vipPlans } from '../../../../lib/reputation';
 import { PackSchema, shopSettings } from '../../../../lib/shop';
 
 export const runtime = 'nodejs';
@@ -16,6 +17,8 @@ export async function GET(request: Request) {
   }
   return json({
     ...(await shopSettings()),
+    vipPlans: await vipPlans(),
+    defaultVipPlans: DEFAULT_VIP_PLANS,
     networks: Object.values(NETWORKS).map((n) => ({ id: n.id, label: n.label, asset: n.asset, example: n.address.source })),
   });
 }
@@ -24,6 +27,7 @@ const Body = z.object({
   wallets: z.record(z.string(), z.string().trim().max(120)).optional(),
   packs: z.array(PackSchema).min(1).max(12).optional(),
   orderMinutes: z.number().int().min(3).max(60).optional(),
+  vipPlans: z.array(VipPlanSchema).min(1).max(8).optional(),
 });
 
 export async function PUT(request: Request) {
@@ -35,7 +39,7 @@ export async function PUT(request: Request) {
   if ('response' in body) {
     return body.response;
   }
-  const { wallets, packs, orderMinutes } = body.data;
+  const { wallets, packs, orderMinutes, vipPlans: plans } = body.data;
   if (wallets) {
     for (const [id, address] of Object.entries(wallets)) {
       if (!isNetwork(id)) {
@@ -57,5 +61,11 @@ export async function PUT(request: Request) {
   if (orderMinutes) {
     await prisma.setting.upsert({ where: { key: 'orderMinutes' }, update: { value: orderMinutes }, create: { key: 'orderMinutes', value: orderMinutes } });
   }
-  return json(await shopSettings());
+  if (plans) {
+    if (new Set(plans.map((p) => p.id)).size !== plans.length) {
+      return problem(400, 'Two VIP plans have the same id');
+    }
+    await prisma.setting.upsert({ where: { key: 'vipPlans' }, update: { value: plans }, create: { key: 'vipPlans', value: plans } });
+  }
+  return json({ ...(await shopSettings()), vipPlans: await vipPlans() });
 }
