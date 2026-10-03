@@ -39,6 +39,12 @@ export const FarmStateSchema = z.looseObject({
   plots: z.array(PlotSchema).max(256),
   animals: z.array(AnimalSchema).max(100),
   eggsInCoop: Count,
+  // Since version 2 (older games leave them out).
+  companion: z.string().max(40).optional(),
+  xp: z.number().int().min(0).max(100_000_000).optional(),
+  ownedPlots: z.array(z.number().int().min(0).max(255)).max(256).optional(),
+  buildings: z.array(z.string().regex(/^[A-Za-z0-9_]{1,24}$/)).max(32).optional(),
+  creditsSeen: z.number().int().min(-100_000_000).max(1_000_000_000).optional(),
 });
 
 export type FarmState = z.infer<typeof FarmStateSchema>;
@@ -55,9 +61,10 @@ export async function ensureFarm(userId: string) {
   return prisma.farm.upsert({ where: { userId }, update: {}, create: { userId } });
 }
 
+/** The farm; credits: BLOOM bought or granted all told (the game adds what's beyond state.creditsSeen). */
 export async function loadFarm(userId: string) {
   const farm = await ensureFarm(userId);
-  return { revision: farm.revision, updatedAt: farm.updatedAt.toISOString(), state: (farm.state as FarmState | null) ?? null };
+  return { revision: farm.revision, updatedAt: farm.updatedAt.toISOString(), credits: farm.credits, state: (farm.state as FarmState | null) ?? null };
 }
 
 /** Stores a save: the whole state, the numbers the site lists, and the animals, in one go. */
@@ -74,7 +81,7 @@ export async function saveFarm(userId: string, state: FarmState) {
       const fields = { kind: a.kind, name: a.name, boughtDay: a.boughtDay, lastMilkedDay: a.lastMilkedDay, lastShornDay: a.lastShornDay };
       await tx.animal.upsert({ where: { id: a.id }, update: fields, create: { id: a.id, farmId: farm.id, ...fields } });
     }
-    return { revision: saved.revision, updatedAt: saved.updatedAt.toISOString() };
+    return { revision: saved.revision, updatedAt: saved.updatedAt.toISOString(), credits: saved.credits };
   });
 }
 

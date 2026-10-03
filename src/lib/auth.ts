@@ -12,6 +12,8 @@ export interface PublicUser {
   id: string;
   username: string;
   email: string;
+  /** "Diana" or "Arash"; null on accounts from before the choice (they choose once, free). */
+  character: string | null;
 }
 
 export interface Tokens {
@@ -77,7 +79,7 @@ export async function issueTokens(user: PublicUser, client: Client): Promise<Tok
     accessToken: await signAccessToken(user),
     refreshToken,
     expiresIn: env.accessTtlSeconds,
-    user: { id: user.id, username: user.username, email: user.email },
+    user: { id: user.id, username: user.username, email: user.email, character: user.character ?? null },
   };
 }
 

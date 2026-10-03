@@ -100,3 +100,27 @@ to the first.
 
 The saved state is the game's `FFarmState` (`Source/MyProject/FarmTypes.h`); `src/lib/farm.ts` checks it
 before storing it (a doctored save with negative coins is refused).
+
+## The BLOOM shop (crypto payments) and the admin page
+
+Players buy BLOOM packs in the game (B, or + on the HUD): they pick a pack (priced in dollars) and a
+coin, and get an order: the exact amount of that coin to send to the admin's wallet, valid for 10
+minutes. The amount is the price in the coin at that moment plus a tiny offset no other open order
+has, so a transfer of that amount, sent while the order was open, is that order's payment. The game
+asks every few seconds; the server then looks on the chain (src/lib/networks.ts) and, once it's
+there, adds the pack to the farm's `credits` (the game adds new credits to its coins, exactly once).
+After the 10 minutes a new order (and a new amount, at the new price) is needed; a payment sent in
+time but seen late still counts.
+
+Coins: USDT (TRC20), TRX, TON, USDT (BEP20), Bitcoin and Litecoin, read through TronGrid,
+toncenter, a public BNB Chain node, mempool.space and litecoinspace.org (no API keys). Prices come
+from CoinGecko, or Kraken if it's busy. Bitcoin and Litecoin payments are credited after one block.
+
+**/admin** (on the website) is for admins: the users flagged `isAdmin` and the names in the
+`ADMIN_USERNAMES` environment variable (comma-separated). There: the wallet address for each coin (a
+coin is offered only while it has one), the packs and their prices, the minutes an order lasts, every
+order (look again on the chain, credit by hand, cancel), and giving a player BLOOM.
+
+Who a player plays (Diana or Arash) is chosen at sign-up and kept on the account; changing it at the
+title screen costs 500 BLOOM (taken through the farm's credits). Accounts from before the choice
+choose once, free.

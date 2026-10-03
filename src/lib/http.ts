@@ -82,6 +82,8 @@ export const RegisterBody = z.object({
   email: z.email().trim().toLowerCase().max(120),
   password: Password,
   client: ClientKind,
+  /** Who they'll play (the game asks at sign-up); fixed after, but for a price. */
+  character: z.enum(['Diana', 'Arash']).optional(),
 });
 
 export const LoginBody = z.object({

@@ -12,7 +12,7 @@ export async function POST(request: Request) {
   if ('response' in body) {
     return body.response;
   }
-  const { username, email, password, client } = body.data;
+  const { username, email, password, client, character } = body.data;
   const taken = await prisma.user.findFirst({
     where: { OR: [{ username: { equals: username, mode: 'insensitive' } }, { email }] },
     select: { email: true },
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   }
   try {
     const user = await prisma.user.create({
-      data: { username, email, passwordHash: await hashPassword(password), lastLoginAt: new Date(), farm: { create: {} } },
+      data: { username, email, passwordHash: await hashPassword(password), lastLoginAt: new Date(), character: character ?? null, farm: { create: {} } },
     });
     return tokensResponse(await issueTokens(user, client), client, 201);
   } catch (error) {

@@ -427,3 +427,61 @@ th {
 .row-head .button {
   margin-left: auto;
 }
+
+/* ---------------------------------------------------------------- admin */
+
+.admin {
+  max-width: 1080px;
+  margin: 28px auto 60px;
+  padding: 0 16px;
+  display: grid;
+  gap: 20px;
+}
+
+.admin .notice {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--gold-soft);
+  cursor: pointer;
+}
+
+.admin td input {
+  padding: 7px 9px;
+  min-width: 80px;
+}
+
+.orders td.actions {
+  white-space: nowrap;
+}
+
+.orders td.actions .button {
+  padding: 6px 10px;
+  margin: 2px;
+  font-size: 13px;
+}
+
+.status {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--line);
+  color: var(--muted);
+}
+
+.status.paid {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.status.pending,
+.status.confirming {
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
+.status.cancelled {
+  color: var(--red);
+}

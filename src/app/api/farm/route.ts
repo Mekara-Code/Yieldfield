@@ -3,6 +3,7 @@ import { authenticate } from '../../../lib/auth';
 import { FarmStateSchema, loadFarm, saveFarm } from '../../../lib/farm';
 import { json, problem, readBody } from '../../../lib/http';
 import { hub } from '../../../lib/hub';
+import { checkOpenOrders } from '../../../lib/shop';
 
 export const runtime = 'nodejs';
 
@@ -12,6 +13,8 @@ export async function GET(request: Request) {
   if (!claims) {
     return problem(401, 'Not signed in');
   }
+  // A pack paid for while the game was closed is credited now (bounded, so the farm still loads if a chain is slow).
+  await Promise.race([checkOpenOrders(claims.userId), new Promise((resolve) => setTimeout(resolve, 4000))]);
   return json(await loadFarm(claims.userId));
 }
 

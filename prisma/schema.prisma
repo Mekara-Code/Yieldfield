@@ -17,9 +17,14 @@ model User {
   passwordHash String
   createdAt    DateTime    @default(now())
   lastLoginAt  DateTime?
+  /// Who they play: "Diana" or "Arash", chosen at sign-up (changing it costs BLOOM). Null on accounts from before.
+  character    String?
+  /// Can open /admin (so can the names in ADMIN_USERNAMES).
+  isAdmin      Boolean     @default(false)
   farm         Farm?
   sessions     Session[]
   events       FarmEvent[]
+  payments     Payment[]
 }
 
 /// A sign-in on one device: the refresh token (stored hashed) that keeps it signed in.
@@ -46,6 +51,9 @@ model Farm {
   coins     Int      @default(250)
   /// The game's save as it sent it (see src/lib/farm.ts); null until the first save.
   state     Json?
+  /// BLOOM bought (or granted, or spent on the server) for this farm, all told; the game adds what's new
+  /// to its coins and keeps how much it has added in state.creditsSeen.
+  credits   Int      @default(0)
   animals   Animal[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -77,4 +85,40 @@ model FarmEvent {
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+/// A BLOOM pack bought with crypto: the exact amount to send to the wallet, and whether it came.
+model Payment {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pack       String
+  bloom      Int
+  usdCents   Int
+  /// The coin and chain paid with (src/lib/shop.ts NETWORKS), e.g. USDT_TRC20.
+  network    String
+  /// The exact amount to send (a decimal string) and the same in the coin's smallest units.
+  amount     String
+  units      String
+  /// The wallet it goes to (the admin's, at the time of the order) and the coin's USD price then.
+  address    String
+  usdPrice   Float
+  /// pending -> paid (credited) | expired | cancelled; "confirming": seen on a chain that needs a block first.
+  status     String    @default("pending")
+  txHash     String?   @unique
+  paidAt     DateTime?
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  checkedAt  DateTime?
+  note       String?
+
+  @@index([status, network])
+  @@index([userId, createdAt])
+}
+
+/// Admin settings: the wallets payments go to, the packs on sale.
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
 }
