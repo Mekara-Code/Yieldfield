@@ -1,5 +1,5 @@
 import { topFarms } from '../../lib/leaderboard';
-import { BloomIcon, MONEY } from '../../components/Bloom';
+import { CoinIcon } from '../../components/Bloom';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +17,8 @@ export default async function Leaderboard() {
               <tr>
                 <th>#</th>
                 <th>Farmer</th>
-                <th>{MONEY}</th>
+                <th>Coins</th>
+                <th>Level</th>
                 <th>Day</th>
                 <th>Animals</th>
                 <th />
@@ -31,8 +32,9 @@ export default async function Leaderboard() {
                     <b>{f.username}</b>
                   </td>
                   <td>
-                    <BloomIcon size={15} /> {f.coins.toLocaleString()}
+                    <CoinIcon size={15} /> {f.coins.toLocaleString()}
                   </td>
+                  <td>{f.level}</td>
                   <td>{f.day}</td>
                   <td>{f.animals}</td>
                   <td>{f.playing && <span className="pill live">playing</span>}</td>

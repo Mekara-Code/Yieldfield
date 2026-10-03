@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import { prisma } from './db';
-import type { FarmState } from './farm';
 import { isVip, standing, VIP_PERKS } from './reputation';
 
 /**
@@ -24,10 +23,21 @@ export interface Task {
   trader?: Trader;
   title: string;
   xp: number;
+  /** Coins it pays (tasks made before coins existed: half again its experience). */
+  coins?: number;
   reputation: number;
 }
 
 export const BASE_TASKS = 3;
+
+/** What a farm needs to have for its tasks to be made (the server's farm, src/lib/game/state.ts). */
+export interface TaskFarm {
+  xp?: number;
+  animals?: { kind: string }[];
+  ownedPlots?: number[];
+  taskDay?: string;
+  taskProgress?: Record<string, number>;
+}
 
 const CROPS: { id: string; level: number; yield: number; plural: string }[] = [
   { id: 'Carrot', level: 1, yield: 4, plural: 'carrots' },
@@ -93,7 +103,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, M
 type Draft = Omit<Task, 'id' | 'xp' | 'reputation'>;
 
 /** What a farm like this one could be asked today: deliveries (one per trader it can supply) and work. */
-function candidates(state: FarmState | null, rnd: () => number) {
+function candidates(state: TaskFarm | null, rnd: () => number) {
   const level = levelForXp(state?.xp ?? 0);
   const animals = state?.animals ?? [];
   const hens = animals.filter((a) => a.kind === 'Chicken').length;
@@ -128,7 +138,7 @@ function candidates(state: FarmState | null, rnd: () => number) {
   const harvest = clamp(1 + level / 4, 1, 8);
   work.push({ kind: 'harvest', count: harvest, title: `Harvest ${harvest} ${harvest === 1 ? 'bed' : 'beds'}` });
   const sell = clamp((100 + level * 40) / 10, 10, 400) * 10;
-  work.push({ kind: 'sell', count: sell, title: `Earn ${sell} BLOOM selling` });
+  work.push({ kind: 'sell', count: sell, title: `Earn ${sell} coins selling` });
   if (cows + sheep > 0) {
     const n = clamp((cows + sheep) * 1.5, 1, 10);
     work.push({ kind: 'milk', count: n, title: `Milk your animals ${n} ${n === 1 ? 'time' : 'times'}` });
@@ -143,7 +153,7 @@ function candidates(state: FarmState | null, rnd: () => number) {
   }
   if (animals.length > 0) {
     const n = clamp(animals.length / 2, 1, 4);
-    work.push({ kind: 'feed', count: n, title: `Give premium feed ${n} ${n === 1 ? 'time' : 'times'}` });
+    work.push({ kind: 'feed', count: n, title: `Feed your animals ${n} ${n === 1 ? 'time' : 'times'}` });
   }
   // Gus first (every farm grows crops), then whoever else it can supply.
   return { level, deliveries: [deliveries[0], ...shuffle(deliveries.slice(1), rnd)], work: shuffle(work, rnd) };
@@ -152,11 +162,12 @@ function candidates(state: FarmState | null, rnd: () => number) {
 function finish(draft: Draft, id: string, level: number): Task {
   const r = REWARD[draft.kind];
   const scale = 1 + 0.08 * (level - 1);
-  return { ...draft, id, xp: Math.round((r.base + r.per * draft.count) * scale), reputation: r.reputation };
+  const xp = Math.round((r.base + r.per * draft.count) * scale);
+  return { ...draft, id, xp, coins: Math.round(xp * 1.5), reputation: r.reputation };
 }
 
 /** count tasks for a farm: up to two deliveries, the rest farm work. */
-export function makeTasks(userId: string, day: string, state: FarmState | null, count: number) {
+export function makeTasks(userId: string, day: string, state: TaskFarm | null, count: number) {
   const rnd = random(`${userId}:${day}`);
   const { level, deliveries, work } = candidates(state, rnd);
   const picked = [...deliveries.slice(0, Math.min(2, count - 1)), ...work].slice(0, count);
@@ -164,25 +175,26 @@ export function makeTasks(userId: string, day: string, state: FarmState | null, 
 }
 
 /** The bonus for finishing them all. */
-export function allBonus(state: FarmState | null) {
+export function allBonus(state: { xp?: number } | null) {
   const level = levelForXp(state?.xp ?? 0);
-  return { xp: 40 + 10 * level, reputation: 20 };
+  return { xp: 40 + 10 * level, reputation: 20, gems: 10 + level };
+}
+
+export function taskCoins(task: Task) {
+  return task.coins ?? Math.round(task.xp * 1.5);
 }
 
 async function loadState(userId: string) {
   const farm = await prisma.farm.findUnique({ where: { userId }, select: { state: true } });
-  return (farm?.state ?? null) as FarmState | null;
+  return (farm?.state ?? null) as TaskFarm | null;
 }
 
-/** Today's tasks (made now if this is the first look today; a VIP gets one more). */
-export async function dailyTasks(userId: string) {
+/** Today's tasks for a farm (made now at the first look today; a VIP gets one more) and which are claimed. */
+export async function ensureTasks(userId: string, state: TaskFarm | null, vip: boolean) {
   const day = today();
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { reputation: true, vipUntil: true } });
-  const want = BASE_TASKS + (isVip(user.vipUntil) ? VIP_PERKS.extraTasks : 0);
+  const want = BASE_TASKS + (vip ? VIP_PERKS.extraTasks : 0);
   let row = await prisma.dailyTasks.findUnique({ where: { userId_day: { userId, day } } });
-  let state: FarmState | null = null;
   if (!row || (row.tasks as unknown as Task[]).length < want) {
-    state = await loadState(userId);
     const kept = row ? (row.tasks as unknown as Task[]) : [];
     // A VIP bought later in the day adds a task to those already given (the same ones stay).
     const fresh = makeTasks(userId, day, state, want);
@@ -194,63 +206,23 @@ export async function dailyTasks(userId: string) {
     });
   }
   const claims = await prisma.taskClaim.findMany({ where: { userId, day }, select: { taskId: true } });
-  const claimed = new Set(claims.map((c) => c.taskId));
-  const tasks = row.tasks as unknown as Task[];
-  const bonus = allBonus(state ?? (await loadState(userId)));
+  return { day, tasks: row.tasks as unknown as Task[], claimed: new Set(claims.map((c) => c.taskId)) };
+}
+
+/** Today's tasks with their progress and claims, the bonus for doing them all, and the player's standing. */
+export async function dailyTasks(userId: string) {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { reputation: true, vipUntil: true, bloom: true, gems: true } });
+  const state = await loadState(userId);
+  const { day, tasks, claimed } = await ensureTasks(userId, state, isVip(user.vipUntil));
+  const bonus = allBonus(state);
+  const progress = state?.taskDay === day ? (state.taskProgress ?? {}) : {};
   return {
     day,
     resetsIn: resetsIn(),
-    tasks: tasks.map((t) => ({ ...t, claimed: claimed.has(t.id) })),
+    tasks: tasks.map((t) => ({ ...t, coins: taskCoins(t), claimed: claimed.has(t.id), progress: claimed.has(t.id) ? t.count : Math.min(progress[t.id] ?? 0, t.count) })),
     allBonus: { ...bonus, claimed: claimed.has('all'), ready: tasks.every((t) => claimed.has(t.id)) },
     standing: await standing(user),
+    // The balances too: BLOOM bought on the site (or given) shows in the game within minutes.
+    wallet: { coins: (state as { coins?: number } | null)?.coins ?? 0, bloom: user.bloom, gems: user.gems },
   };
-}
-
-export class TaskError extends Error {
-  constructor(public status: number, message: string) {
-    super(message);
-  }
-}
-
-/**
- * Takes a task's reward (once): the reputation (more for a VIP) is added here, and the experience is
- * returned for the game to add. "all" is the bonus for having claimed every task today.
- */
-export async function claimTask(userId: string, day: string, taskId: string) {
-  if (day !== today()) {
-    throw new TaskError(409, 'Those tasks are over: new ones are out');
-  }
-  const row = await prisma.dailyTasks.findUnique({ where: { userId_day: { userId, day } } });
-  if (!row) {
-    throw new TaskError(404, 'No tasks today yet');
-  }
-  const tasks = row.tasks as unknown as Task[];
-  let reward: { xp: number; reputation: number };
-  if (taskId === 'all') {
-    const claimed = await prisma.taskClaim.findMany({ where: { userId, day }, select: { taskId: true } });
-    if (!tasks.every((t) => claimed.some((c) => c.taskId === t.id))) {
-      throw new TaskError(409, 'Finish all of today\'s tasks first');
-    }
-    reward = allBonus(await loadState(userId));
-  } else {
-    const task = tasks.find((t) => t.id === taskId);
-    if (!task) {
-      throw new TaskError(404, 'No such task');
-    }
-    reward = task;
-  }
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { vipUntil: true } });
-  const reputation = Math.round(reward.reputation * (isVip(user.vipUntil) ? VIP_PERKS.reputationMultiplier : 1));
-  try {
-    const updated = await prisma.$transaction(async (tx) => {
-      await tx.taskClaim.create({ data: { userId, day, taskId, xp: reward.xp, reputation } });
-      return tx.user.update({ where: { id: userId }, data: { reputation: { increment: reputation } }, select: { reputation: true, vipUntil: true } });
-    });
-    return { xp: reward.xp, reputation, standing: await standing(updated) };
-  } catch (error) {
-    if ((error as { code?: string }).code === 'P2002') {
-      throw new TaskError(409, 'Already claimed');
-    }
-    throw error;
-  }
 }

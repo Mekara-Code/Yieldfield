@@ -532,3 +532,51 @@ th {
   padding: 0;
   text-decoration: underline;
 }
+
+.wallet-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 8px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.tag.hungry {
+  background: var(--red);
+  color: #fff;
+}
+
+.animal.is-hungry {
+  box-shadow: inset 3px 0 0 var(--red);
+}
+
+.plot.dry {
+  outline: 2px dashed var(--sky);
+}
+
+.plot .grow {
+  width: 70%;
+  height: 4px;
+  margin-top: 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+}
+
+.plot .grow > span {
+  display: block;
+  height: 100%;
+  background: #9fd46b;
+}

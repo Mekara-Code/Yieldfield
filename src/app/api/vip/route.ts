@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { authenticate } from '../../../lib/auth';
+import { performAction } from '../../../lib/game/engine';
 import { json, problem, readBody } from '../../../lib/http';
-import { buyVip, standingOf } from '../../../lib/reputation';
+import { standingOf } from '../../../lib/reputation';
 
 export const runtime = 'nodejs';
 
@@ -16,7 +18,7 @@ export async function GET(request: Request) {
 
 const Body = z.object({ plan: z.string().regex(/^[a-z0-9_-]{1,24}$/) });
 
-/** Buys a VIP plan with BLOOM (from the farm's credits); its days add to any VIP still running. */
+/** Buys a VIP plan with the player's BLOOM (the game does it as an action: POST /api/farm/act buy_vip). */
 export async function POST(request: Request) {
   const claims = await authenticate(request);
   if (!claims) {
@@ -26,9 +28,6 @@ export async function POST(request: Request) {
   if ('response' in body) {
     return body.response;
   }
-  const result = await buyVip(claims.userId, body.data.plan);
-  if ('error' in result) {
-    return problem(result.status, result.error);
-  }
-  return json(result);
+  const result = await performAction(claims.userId, randomUUID(), { type: 'buy_vip', plan: body.data.plan });
+  return json(result.body, result.status);
 }

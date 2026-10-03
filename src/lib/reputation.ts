@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { prisma } from './db';
-import { spendBloom } from './players';
 
 /**
  * A player's standing in the valley: reputation, earned with the daily tasks (src/lib/tasks.ts), puts
@@ -104,28 +103,6 @@ export async function standing(user: { reputation: number; vipUntil: Date | null
 export async function standingOf(userId: string) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { reputation: true, vipUntil: true } });
   return standing(user);
-}
-
-/** Buys VIP days with BLOOM (taken through the farm's credits); days add to any VIP still running. */
-export async function buyVip(userId: string, planId: string): Promise<{ error: string; status: number } | { standing: Awaited<ReturnType<typeof standing>>; credits: number; charged: number }> {
-  const plan = (await vipPlans()).find((p) => p.id === planId);
-  if (!plan) {
-    return { error: 'No such plan', status: 404 };
-  }
-  const result = await prisma.$transaction(async (tx) => {
-    const spent = await spendBloom(tx, userId, plan.bloom, 'vip', { plan: plan.id, days: plan.days });
-    if ('error' in spent) {
-      return spent;
-    }
-    const user = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { vipUntil: true } });
-    const from = isVip(user.vipUntil) ? user.vipUntil!.getTime() : Date.now();
-    const updated = await tx.user.update({ where: { id: userId }, data: { vipUntil: new Date(from + plan.days * 86_400_000) }, select: { reputation: true, vipUntil: true } });
-    return { user: updated, credits: spent.credits, charged: plan.bloom };
-  });
-  if (!('user' in result)) {
-    return { error: result.error, status: 402 };
-  }
-  return { standing: await standing(result.user), credits: result.credits, charged: result.charged };
 }
 
 /** An admin's change: VIP days (negative takes them away) and reputation (added). */

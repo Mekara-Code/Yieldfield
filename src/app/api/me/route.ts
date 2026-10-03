@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   if (!claims) {
     return problem(401, 'Not signed in');
   }
-  const user = await prisma.user.findUnique({ where: { id: claims.userId }, include: { farm: { select: { day: true, coins: true, revision: true, updatedAt: true, credits: true } } } });
+  const user = await prisma.user.findUnique({ where: { id: claims.userId }, include: { farm: { select: { day: true, coins: true, revision: true, updatedAt: true } } } });
   if (!user) {
     return problem(401, 'No such player');
   }
@@ -23,7 +23,8 @@ export async function GET(request: Request) {
     createdAt: user.createdAt.toISOString(),
     character: user.character,
     admin: await isAdmin(claims),
-    farm: user.farm && { day: user.farm.day, coins: user.farm.coins, revision: user.farm.revision, credits: user.farm.credits },
+    farm: user.farm && { day: user.farm.day, coins: user.farm.coins, revision: user.farm.revision },
+    wallet: { coins: user.farm?.coins ?? 0, bloom: user.bloom, gems: user.gems },
     playing: isPlaying(user.id, user.farm?.updatedAt),
     standing: await standing(user),
   });

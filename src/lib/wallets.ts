@@ -1,5 +1,6 @@
 import { createHash, createPublicKey, randomBytes, verify as verifySignature } from 'node:crypto';
 import { concat, keccak256, recoverAddress, toBytes, verifyMessage } from 'viem';
+import { addCurrency } from './currency';
 import { prisma } from './db';
 import { incoming, isNetwork, NETWORKS, type NetworkId, tonRaw, tronBase58, usdPrice } from './networks';
 import { shopSettings, type Pack } from './shop';
@@ -204,17 +205,17 @@ export async function scanDeposits(userId: string) {
           continue;
         }
         try {
-          await prisma.$transaction([
-            prisma.payment.create({
+          await prisma.$transaction(async (tx) => {
+            await tx.payment.create({
               data: {
                 userId, pack: 'deposit', bloom, usdCents: Math.round(usd * 100), network: id, amount: coins.toString(), units: t.units.toString(),
                 address: to, usdPrice: price, status: 'paid', txHash: t.hash, paidAt: new Date(t.time ?? Date.now()), expiresAt: new Date(),
                 note: `from linked wallet ${shortAddress(wallet.address)}`,
               },
-            }),
-            prisma.farm.upsert({ where: { userId }, update: { credits: { increment: bloom } }, create: { userId, credits: bloom } }),
-            prisma.farmEvent.create({ data: { userId, kind: 'purchase', day: 0, data: { bloom, usd: usd.toFixed(2), coin: id, wallet: true } } }),
-          ]);
+            });
+            await addCurrency(tx, userId, 'bloom', bloom, 'deposit', { coin: id, tx: t.hash });
+            await tx.farmEvent.create({ data: { userId, kind: 'purchase', day: 0, data: { bloom, usd: usd.toFixed(2), coin: id, wallet: true } } });
+          });
           credited.push({ network: id, amount: coins.toString(), bloom, txHash: t.hash });
         } catch (error) {
           if ((error as { code?: string }).code !== 'P2002') {

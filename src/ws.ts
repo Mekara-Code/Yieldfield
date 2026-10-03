@@ -3,7 +3,7 @@ import type { Duplex } from 'node:stream';
 import { type RawData, WebSocket, WebSocketServer } from 'ws';
 import { z } from 'zod';
 import { verifyAccessToken } from './lib/auth';
-import { FarmEventSchema, FarmStateSchema, recordEvent, saveFarm } from './lib/farm';
+import { FarmEventSchema, recordEvent } from './lib/farm';
 import { type Connection, hub, send } from './lib/hub';
 
 /*
@@ -12,7 +12,7 @@ import { type Connection, hub, send } from './lib/hub';
  * First the client signs in:   { type: "auth", token: <access token>, client: "game" | "web" }
  *                        ->    { type: "auth:ok", user: { id, username }, online }   (or auth:error, and closed)
  * The game then sends:
- *   { type: "farm:save", rid, state }   ->  { type: "farm:saved", rid, revision, updatedAt }  (or error with rid)
+ *   { type: "farm:save" } is refused: the server keeps the farm (POST /api/farm/act)
  *   { type: "farm:event", event: { kind, day, data } }
  *   { type: "ping" }                    ->  { type: "pong" }
  * and the player's dashboards hear farm:update (with the state) and farm:event as it happens.
@@ -21,7 +21,6 @@ import { type Connection, hub, send } from './lib/hub';
  */
 
 const AuthMessage = z.object({ type: z.literal('auth'), token: z.string().min(10).max(2000), client: z.enum(['game', 'web']).default('game') });
-const SaveMessage = z.object({ type: z.literal('farm:save'), rid: z.number().int().optional(), state: FarmStateSchema });
 const EventMessage = z.object({ type: z.literal('farm:event'), event: FarmEventSchema });
 
 const AUTH_TIMEOUT_MS = 10_000;
@@ -93,18 +92,10 @@ export function attachSockets(server: Server, fallback?: Upgrade) {
           case 'ping':
             send(ws, { type: 'pong' });
             return;
-          case 'farm:save': {
-            const save = SaveMessage.safeParse(message);
-            if (!save.success) {
-              const issue = save.error.issues[0];
-              send(ws, { type: 'error', rid: message.rid, message: `Save refused: ${issue?.path.join('.')} ${issue?.message}` });
-              return;
-            }
-            const saved = await saveFarm(connection.userId, save.data.state);
-            send(ws, { type: 'farm:saved', rid: save.data.rid, ...saved });
-            hub.toUser(connection.userId, { type: 'farm:update', ...saved, state: save.data.state }, 'web');
+          case 'farm:save':
+            // The server keeps the farm now (POST /api/farm/act): a game that still saves it is out of date.
+            send(ws, { type: 'error', rid: message.rid, message: 'The farm is kept by the server now: update the game' });
             return;
-          }
           case 'farm:event': {
             const parsed = EventMessage.safeParse(message);
             if (!parsed.success) {

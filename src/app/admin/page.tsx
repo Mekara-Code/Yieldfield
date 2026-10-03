@@ -21,11 +21,18 @@ interface VipPlan {
   bloom: number;
   tag?: string;
 }
+interface GemPack {
+  id: string;
+  gems: number;
+  bloom: number;
+  tag?: string;
+}
 interface Settings {
   wallets: Record<string, string>;
   packs: Pack[];
   orderMinutes: number;
   vipPlans: VipPlan[];
+  gemPacks: GemPack[];
   networks: NetworkInfo[];
 }
 interface Standing {
@@ -91,7 +98,9 @@ export default function AdminPage() {
   const [denied, setDenied] = useState<string | null>(null);
   const [grantName, setGrantName] = useState('');
   const [grantBloom, setGrantBloom] = useState('');
+  const [grantCurrency, setGrantCurrency] = useState<'bloom' | 'gems'>('bloom');
   const [vipPlans, setVipPlans] = useState<VipPlan[]>([]);
+  const [gemPacks, setGemPacks] = useState<GemPack[]>([]);
   const [playerName, setPlayerName] = useState('');
   const [vipDays, setVipDays] = useState('');
   const [repChange, setRepChange] = useState('');
@@ -117,6 +126,7 @@ export default function AdminPage() {
       setPacks(data.packs);
       setMinutes(data.orderMinutes);
       setVipPlans(data.vipPlans ?? []);
+      setGemPacks(data.gemPacks ?? []);
       await loadOrders('');
     })();
   }, [loadOrders]);
@@ -127,13 +137,14 @@ export default function AdminPage() {
     }
   }, [filter, settings, loadOrders]);
 
-  async function save(part: Partial<Pick<Settings, 'wallets' | 'packs' | 'orderMinutes' | 'vipPlans'>>) {
+  async function save(part: Partial<Pick<Settings, 'wallets' | 'packs' | 'orderMinutes' | 'vipPlans' | 'gemPacks'>>) {
     const { data, error } = await call<Settings>('/api/admin/settings', { method: 'PUT', body: JSON.stringify(part) });
     if (data) {
       setWallets(data.wallets);
       setPacks(data.packs);
       setMinutes(data.orderMinutes);
       setVipPlans(data.vipPlans ?? []);
+      setGemPacks(data.gemPacks ?? []);
       setMessage('Saved');
     } else {
       setMessage(error);
@@ -163,8 +174,9 @@ export default function AdminPage() {
       setMessage('A player name and a whole number of BLOOM');
       return;
     }
-    const { error } = await call('/api/admin/grant', { method: 'POST', body: JSON.stringify({ username: grantName, bloom }) });
-    setMessage(error ?? `${bloom > 0 ? 'Gave' : 'Took'} ${Math.abs(bloom)} BLOOM ${bloom > 0 ? 'to' : 'from'} ${grantName}`);
+    const { data, error } = await call<{ bloom: number; gems: number }>('/api/admin/grant', { method: 'POST', body: JSON.stringify({ username: grantName, amount: bloom, currency: grantCurrency }) });
+    const what = grantCurrency === 'bloom' ? 'BLOOM' : 'gems';
+    setMessage(error ?? `${bloom > 0 ? 'Gave' : 'Took'} ${Math.abs(bloom)} ${what} ${bloom > 0 ? 'to' : 'from'} ${grantName}: they have ${data?.bloom} BLOOM and ${data?.gems} gems now`);
     if (!error) {
       setGrantBloom('');
     }
@@ -287,11 +299,15 @@ export default function AdminPage() {
       </section>
 
       <section className="card">
-        <h2>Give BLOOM</h2>
-        <p className="muted small">Added to the player&apos;s farm the next time their game loads or saves (a negative number takes it away).</p>
+        <h2>Give BLOOM or gems</h2>
+        <p className="muted small">Added to the player&apos;s balance on the server at once (a negative number takes it away, as far as they have it). Written in the books.</p>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <input style={{ flex: 2, minWidth: 160 }} placeholder="player name" value={grantName} onChange={(e) => setGrantName(e.target.value)} />
-          <input style={{ flex: 1, minWidth: 100 }} type="number" placeholder="BLOOM" value={grantBloom} onChange={(e) => setGrantBloom(e.target.value)} />
+          <input style={{ flex: 1, minWidth: 100 }} type="number" placeholder="amount" value={grantBloom} onChange={(e) => setGrantBloom(e.target.value)} />
+          <select value={grantCurrency} onChange={(e) => setGrantCurrency(e.target.value as 'bloom' | 'gems')}>
+            <option value="bloom">BLOOM</option>
+            <option value="gems">gems</option>
+          </select>
           <button className="button" onClick={giveBloom}>
             Give
           </button>
@@ -300,7 +316,7 @@ export default function AdminPage() {
 
       <section className="card">
         <h2>VIP plans</h2>
-        <p className="muted small">Bought in the game&apos;s journal (J) with BLOOM from the farm. VIP: a golden name, 1.5x reputation from tasks and one more task a day, +5% and bigger orders at the traders.</p>
+        <p className="muted small">Bought in the game&apos;s journal (J) with BLOOM. VIP: a golden name, 1.5x reputation from tasks and one more task a day, +5% and bigger orders at the traders.</p>
         <div className="table-wrap">
           <table>
             <thead>
@@ -343,6 +359,55 @@ export default function AdminPage() {
           </button>
           <button className="button" onClick={() => save({ vipPlans })}>
             Save VIP plans
+          </button>
+        </div>
+      </section>
+
+      <section className="card">
+        <h2>Gem packs</h2>
+        <p className="muted small">Bought in the game (the + by the gems) with BLOOM. Gems speed timers up: 3 gems a minute of growing, milk, eggs or wool left.</p>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Id</th>
+                <th>Gems</th>
+                <th>BLOOM</th>
+                <th>Badge</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {gemPacks.map((p, i) => (
+                <tr key={i}>
+                  <td>
+                    <input value={p.id} onChange={(e) => setGemPacks(gemPacks.map((q, j) => (j === i ? { ...q, id: e.target.value } : q)))} />
+                  </td>
+                  <td>
+                    <input type="number" value={p.gems} onChange={(e) => setGemPacks(gemPacks.map((q, j) => (j === i ? { ...q, gems: Number(e.target.value) } : q)))} />
+                  </td>
+                  <td>
+                    <input type="number" value={p.bloom} onChange={(e) => setGemPacks(gemPacks.map((q, j) => (j === i ? { ...q, bloom: Number(e.target.value) } : q)))} />
+                  </td>
+                  <td>
+                    <input value={p.tag ?? ''} placeholder="—" onChange={(e) => setGemPacks(gemPacks.map((q, j) => (j === i ? { ...q, tag: e.target.value || undefined } : q)))} />
+                  </td>
+                  <td>
+                    <button className="button quiet" onClick={() => setGemPacks(gemPacks.filter((_, j) => j !== i))}>
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+          <button className="button quiet" onClick={() => setGemPacks([...gemPacks, { id: `g${Date.now() % 100000}`, gems: 500, bloom: 100 }])}>
+            Add a pack
+          </button>
+          <button className="button" onClick={() => save({ gemPacks })}>
+            Save gem packs
           </button>
         </div>
       </section>

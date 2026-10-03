@@ -5,7 +5,7 @@ import { checkOrder, publicOrder } from '../../../../../lib/shop';
 
 export const runtime = 'nodejs';
 
-/** An order, looked for on the chain first: pending, expired, confirming or paid (then credits says the farm's new total). */
+/** An order, looked for on the chain first: pending, expired, confirming or paid (then balance is the player's BLOOM now). */
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const claims = await authenticate(request);
   if (!claims) {
@@ -21,6 +21,6 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   } catch {
     // the chain's API is slow or down: the order as it stands; the game asks again shortly
   }
-  const farm = order.status === 'paid' ? await prisma.farm.findUnique({ where: { userId: claims.userId }, select: { credits: true } }) : null;
-  return json(publicOrder(order, farm?.credits));
+  const user = order.status === 'paid' ? await prisma.user.findUnique({ where: { id: claims.userId }, select: { bloom: true } }) : null;
+  return json(publicOrder(order, user?.bloom));
 }

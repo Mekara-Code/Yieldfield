@@ -1,3 +1,4 @@
+import { spendCurrency } from './currency';
 import { prisma } from './db';
 import type { Prisma } from '../generated/prisma/client';
 import type { AccessClaims } from './auth';
@@ -25,22 +26,15 @@ export async function isAdmin(claims: AccessClaims | null) {
   return !!user?.isAdmin;
 }
 
-/**
- * Takes BLOOM from a farm for something bought on the server: through the farm's credits (the game
- * takes it off its coins the next time it loads or saves, exactly once). What it can spend: the coins
- * in its last save, plus credits it hasn't seen yet.
- */
-export async function spendBloom(tx: Prisma.TransactionClient, userId: string, amount: number, kind: string, data: Record<string, string | number>): Promise<{ error: string } | { credits: number }> {
-  const farm = await tx.farm.findUnique({ where: { userId } });
-  const state = (farm?.state ?? null) as { coins?: number; creditsSeen?: number } | null;
-  const credits = farm?.credits ?? 0;
-  const available = (state?.coins ?? 0) + credits - (state?.creditsSeen ?? 0);
-  if (available < amount) {
-    return { error: `You need ${amount} BLOOM (you have ${available})` };
+/** Takes BLOOM from the player for something bought on the server (written in the books); an error if they haven't that much. */
+export async function spendBloom(tx: Prisma.TransactionClient, userId: string, amount: number, kind: string, data: Record<string, string | number>): Promise<{ error: string } | { bloom: number }> {
+  const user = await spendCurrency(tx, userId, 'bloom', amount, kind, data);
+  if (!user) {
+    const have = await tx.user.findUnique({ where: { id: userId }, select: { bloom: true } });
+    return { error: `You need ${amount} BLOOM (you have ${have?.bloom ?? 0})` };
   }
-  const updated = await tx.farm.upsert({ where: { userId }, update: { credits: { decrement: amount } }, create: { userId, credits: -amount } });
   await tx.farmEvent.create({ data: { userId, kind, day: 0, data: { ...data, cost: amount } } });
-  return { credits: updated.credits };
+  return { bloom: user.bloom };
 }
 
 /**
@@ -49,19 +43,19 @@ export async function spendBloom(tx: Prisma.TransactionClient, userId: string, a
  */
 export async function changeCharacter(userId: string, character: CharacterName) {
   return prisma.$transaction(async (tx) => {
-    const user = await tx.user.findUniqueOrThrow({ where: { id: userId }, include: { farm: true } });
+    const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
     if (user.character === character) {
-      return { character, charged: 0, credits: user.farm?.credits ?? 0 };
+      return { character, charged: 0, bloom: user.bloom };
     }
     if (!user.character) {
       await tx.user.update({ where: { id: userId }, data: { character } });
-      return { character, charged: 0, credits: user.farm?.credits ?? 0 };
+      return { character, charged: 0, bloom: user.bloom };
     }
     const spent = await spendBloom(tx, userId, CHARACTER_CHANGE_PRICE, 'character', { from: user.character, to: character });
     if ('error' in spent) {
       return { error: spent.error.replace(' BLOOM', ' BLOOM to change') };
     }
     await tx.user.update({ where: { id: userId }, data: { character } });
-    return { character, charged: CHARACTER_CHANGE_PRICE, credits: spent.credits };
+    return { character, charged: CHARACTER_CHANGE_PRICE, bloom: spent.bloom };
   });
 }

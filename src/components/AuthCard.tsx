@@ -55,7 +55,7 @@ export function AuthCard() {
           Create account
         </button>
       </div>
-      <form onSubmit={submit}>
+      <form method="post" onSubmit={submit}>
         {mode === 'login' ? (
           <>
             <label htmlFor="login">Name or email</label>

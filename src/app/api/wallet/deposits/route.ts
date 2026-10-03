@@ -12,6 +12,6 @@ export async function POST(request: Request) {
     return problem(401, 'Not signed in');
   }
   const credited = await scanDeposits(claims.userId);
-  const farm = await prisma.farm.findUnique({ where: { userId: claims.userId }, select: { credits: true } });
-  return json({ credited, credits: farm?.credits ?? 0 });
+  const user = await prisma.user.findUnique({ where: { id: claims.userId }, select: { bloom: true } });
+  return json({ credited, balance: user?.bloom ?? 0 });
 }

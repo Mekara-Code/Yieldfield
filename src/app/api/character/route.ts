@@ -7,7 +7,7 @@ export const runtime = 'nodejs';
 
 const Body = z.object({ character: z.enum(['Diana', 'Arash']) });
 
-/** Becomes the other character: free the first time, then CHARACTER_CHANGE_PRICE BLOOM (taken from the farm's credits). */
+/** Becomes the other character: free the first time, then CHARACTER_CHANGE_PRICE of the player's BLOOM. */
 export async function POST(request: Request) {
   const claims = await authenticate(request);
   if (!claims) {

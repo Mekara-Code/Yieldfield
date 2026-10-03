@@ -1,5 +1,6 @@
 import { randomInt } from 'node:crypto';
 import { z } from 'zod';
+import { addCurrency, changeCurrency, type Currency } from './currency';
 import { prisma } from './db';
 import type { Payment } from '../generated/prisma/client';
 import { formatUnits, incoming, isNetwork, NETWORKS, type NetworkId, usdPrice } from './networks';
@@ -7,8 +8,8 @@ import { formatUnits, incoming, isNetwork, NETWORKS, type NetworkId, usdPrice } 
 /**
  * The BLOOM shop: packs priced in dollars, paid in crypto to the wallets the admin sets (/admin).
  * An order fixes the exact amount (the coin's price then, plus a tiny offset no other open order
- * has) for ORDER_MINUTES; a transfer of that amount sent in that time credits the pack to the farm
- * (Farm.credits, which the game adds to its coins). After that a new order, at a new price, is needed.
+ * has) for ORDER_MINUTES; a transfer of that amount sent in that time credits the pack to the player's
+ * BLOOM (kept on the server). After that a new order, at a new price, is needed.
  */
 
 export const PackSchema = z.object({
@@ -121,7 +122,7 @@ export async function createOrder(userId: string, packId: string, networkId: str
 }
 
 /** What the game and the site see of an order. */
-export function publicOrder(p: Payment, credits?: number) {
+export function publicOrder(p: Payment, bloomBalance?: number) {
   const network = isNetwork(p.network) ? NETWORKS[p.network] : null;
   const now = Date.now();
   // The window to pay has closed: the order shows as expired, though a payment sent in time can still turn up.
@@ -142,11 +143,11 @@ export function publicOrder(p: Payment, credits?: number) {
     secondsLeft: Math.max(0, Math.round((p.expiresAt.getTime() - now) / 1000)),
     txHash: p.txHash,
     explorer: p.txHash && network ? network.explorer + p.txHash : null,
-    credits,
+    balance: bloomBalance,
   };
 }
 
-/** Credits a paid order to the farm, once (the tx can only be used by one order). */
+/** Credits a paid order to the player's BLOOM, once (the tx can only be used by one order). */
 async function credit(p: Payment, txHash: string, note?: string) {
   return prisma.$transaction(async (tx) => {
     const done = await tx.payment.updateMany({
@@ -156,7 +157,7 @@ async function credit(p: Payment, txHash: string, note?: string) {
     if (done.count === 0) {
       return tx.payment.findUniqueOrThrow({ where: { id: p.id } });
     }
-    await tx.farm.upsert({ where: { userId: p.userId }, update: { credits: { increment: p.bloom } }, create: { userId: p.userId, credits: p.bloom } });
+    await addCurrency(tx, p.userId, 'bloom', p.bloom, 'pack', { order: p.id, usd: (p.usdCents / 100).toFixed(2) });
     await tx.farmEvent.create({ data: { userId: p.userId, kind: 'purchase', day: 0, data: { bloom: p.bloom, usd: (p.usdCents / 100).toFixed(2), coin: p.network } } });
     return tx.payment.findUniqueOrThrow({ where: { id: p.id } });
   });
@@ -245,16 +246,22 @@ export async function adminCredit(id: string, txHash: string | undefined, admin:
   return credit(p, txHash?.trim() || `manual:${p.id}`, `credited by ${admin}`);
 }
 
-export async function grant(username: string, bloom: number, admin: string) {
+/** Admin: gives a player BLOOM or gems (negative takes them, as far as they have). */
+export async function grant(username: string, amount: number, admin: string, currency: Currency = 'bloom') {
   const user = await prisma.user.findFirst({ where: { username: { equals: username, mode: 'insensitive' } }, select: { id: true, username: true } });
   if (!user) {
     throw new ShopError(404, 'No such player');
   }
-  await prisma.$transaction([
-    prisma.farm.upsert({ where: { userId: user.id }, update: { credits: { increment: bloom } }, create: { userId: user.id, credits: bloom } }),
-    prisma.farmEvent.create({ data: { userId: user.id, kind: 'gift', day: 0, data: { bloom, by: admin } } }),
-  ]);
-  return user;
+  const balances = await prisma.$transaction(async (tx) => {
+    const changed = await changeCurrency(tx, user.id, currency, amount, 'admin', { by: admin });
+    if (!changed) {
+      throw new ShopError(400, `They have less than ${-amount} ${currency === 'bloom' ? 'BLOOM' : 'gems'}`);
+    }
+    const farm = await tx.farm.findUnique({ where: { userId: user.id }, select: { day: true } });
+    await tx.farmEvent.create({ data: { userId: user.id, kind: 'gift', day: farm?.day ?? 1, data: { [currency]: amount, by: admin } } });
+    return changed;
+  });
+  return { ...user, ...balances };
 }
 
 export type { NetworkId };
