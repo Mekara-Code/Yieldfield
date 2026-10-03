@@ -1,14 +1,14 @@
 import { createHash } from 'node:crypto';
 import { prisma } from './db';
-import { isVip, standing, VIP_PERKS } from './reputation';
+import { isVip, sourceOf, standing, STANDING_SELECT, VIP_PERKS } from './reputation';
 
 /**
  * Each player's daily tasks: a few things to do that (UTC) day, made at their first look from what
  * their farm can do then (its level, beds and animals), the same all day. Deliveries go to the
  * farm's traders (the game's AFarmTrader: Gus the grocer, Hattie the egg lady, Molly the dairy
- * maid, Bruno the butcher); the rest is farm work. The game counts the progress and claims each
- * one done: the experience goes to the farm (the game adds it), the reputation to the player (here,
- * once per task: a doctored game can't take more than the day's tasks give).
+ * maid, Bruno the butcher); the rest is farm work. The server counts the progress as the actions come
+ * and pays each one done (src/lib/game/engine.ts): experience and coins, once per task (TaskClaim).
+ * Tasks give no reputation (it comes from linked wallets, Discord and VIP: src/lib/reputation.ts).
  */
 
 export type TaskKind = 'deliver' | 'water' | 'plant' | 'harvest' | 'milk' | 'shear' | 'eggs' | 'sell' | 'feed';
@@ -25,7 +25,8 @@ export interface Task {
   xp: number;
   /** Coins it pays (tasks made before coins existed: half again its experience). */
   coins?: number;
-  reputation: number;
+  /** Tasks made before 1.6 carried reputation: it isn't given any more. */
+  reputation?: number;
 }
 
 export const BASE_TASKS = 3;
@@ -48,17 +49,17 @@ const CROPS: { id: string; level: number; yield: number; plural: string }[] = [
   { id: 'Pumpkin', level: 9, yield: 2, plural: 'pumpkins' },
 ];
 
-// Experience: a base and so much a piece (then scaled by the level); reputation per task.
-const REWARD: Record<TaskKind, { base: number; per: number; reputation: number }> = {
-  deliver: { base: 20, per: 4, reputation: 10 },
-  water: { base: 10, per: 3, reputation: 6 },
-  plant: { base: 10, per: 3, reputation: 6 },
-  harvest: { base: 10, per: 6, reputation: 6 },
-  milk: { base: 10, per: 6, reputation: 7 },
-  shear: { base: 10, per: 10, reputation: 7 },
-  eggs: { base: 10, per: 2, reputation: 6 },
-  sell: { base: 10, per: 0.1, reputation: 6 },
-  feed: { base: 10, per: 15, reputation: 12 },
+// Experience: a base and so much a piece (then scaled by the level).
+const REWARD: Record<TaskKind, { base: number; per: number }> = {
+  deliver: { base: 20, per: 4 },
+  water: { base: 10, per: 3 },
+  plant: { base: 10, per: 3 },
+  harvest: { base: 10, per: 6 },
+  milk: { base: 10, per: 6 },
+  shear: { base: 10, per: 10 },
+  eggs: { base: 10, per: 2 },
+  sell: { base: 10, per: 0.1 },
+  feed: { base: 10, per: 15 },
 };
 
 export function today(now = new Date()) {
@@ -100,7 +101,7 @@ function shuffle<T>(items: T[], rnd: () => number) {
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(v)));
 
-type Draft = Omit<Task, 'id' | 'xp' | 'reputation'>;
+type Draft = Omit<Task, 'id' | 'xp' | 'coins' | 'reputation'>;
 
 /** What a farm like this one could be asked today: deliveries (one per trader it can supply) and work. */
 function candidates(state: TaskFarm | null, rnd: () => number) {
@@ -163,7 +164,7 @@ function finish(draft: Draft, id: string, level: number): Task {
   const r = REWARD[draft.kind];
   const scale = 1 + 0.08 * (level - 1);
   const xp = Math.round((r.base + r.per * draft.count) * scale);
-  return { ...draft, id, xp, coins: Math.round(xp * 1.5), reputation: r.reputation };
+  return { ...draft, id, xp, coins: Math.round(xp * 1.5) };
 }
 
 /** count tasks for a farm: up to two deliveries, the rest farm work. */
@@ -177,7 +178,7 @@ export function makeTasks(userId: string, day: string, state: TaskFarm | null, c
 /** The bonus for finishing them all. */
 export function allBonus(state: { xp?: number } | null) {
   const level = levelForXp(state?.xp ?? 0);
-  return { xp: 40 + 10 * level, reputation: 20, gems: 10 + level };
+  return { xp: 40 + 10 * level, gems: 10 + level };
 }
 
 export function taskCoins(task: Task) {
@@ -211,7 +212,7 @@ export async function ensureTasks(userId: string, state: TaskFarm | null, vip: b
 
 /** Today's tasks with their progress and claims, the bonus for doing them all, and the player's standing. */
 export async function dailyTasks(userId: string) {
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { reputation: true, vipUntil: true, bloom: true, gems: true } });
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { ...STANDING_SELECT, bloom: true, gems: true } });
   const state = await loadState(userId);
   const { day, tasks, claimed } = await ensureTasks(userId, state, isVip(user.vipUntil));
   const bonus = allBonus(state);
@@ -219,9 +220,9 @@ export async function dailyTasks(userId: string) {
   return {
     day,
     resetsIn: resetsIn(),
-    tasks: tasks.map((t) => ({ ...t, coins: taskCoins(t), claimed: claimed.has(t.id), progress: claimed.has(t.id) ? t.count : Math.min(progress[t.id] ?? 0, t.count) })),
-    allBonus: { ...bonus, claimed: claimed.has('all'), ready: tasks.every((t) => claimed.has(t.id)) },
-    standing: await standing(user),
+    tasks: tasks.map((t) => ({ ...t, reputation: 0, coins: taskCoins(t), claimed: claimed.has(t.id), progress: claimed.has(t.id) ? t.count : Math.min(progress[t.id] ?? 0, t.count) })),
+    allBonus: { ...bonus, reputation: 0, claimed: claimed.has('all'), ready: tasks.every((t) => claimed.has(t.id)) },
+    standing: await standing(sourceOf(user)),
     // The balances too: BLOOM bought on the site (or given) shows in the game within minutes.
     wallet: { coins: (state as { coins?: number } | null)?.coins ?? 0, bloom: user.bloom, gems: user.gems },
   };

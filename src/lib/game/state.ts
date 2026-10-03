@@ -17,6 +17,8 @@ export interface Plot {
   grown: number;
   grownAt: number;
   wetUntil: number;
+  /** Seconds of growing it needs (the crop's, less with the farming skill when it was planted). */
+  need?: number;
 }
 
 export interface Animal {
@@ -55,8 +57,28 @@ export interface Farm {
   traderSales: Record<string, number>;
   /** When the player last slept (Unix seconds): once in SLEEP_SECONDS. */
   lastSleptAt: number;
+  /** Buildings going up: when each is done (Unix seconds). */
+  construction: Record<string, number>;
+  /** Levels in each skill track (defs.ts SKILL_TRACKS), when they were last taken back (0: never), and the
+   *  fractions of extra yield not given yet. */
+  skills: Record<string, number>;
+  skillResetAt: number;
+  skillCarry: Record<string, number>;
+  /** Sales on the market up to then (milliseconds) were told already. */
+  marketSeenAt: number;
   /** The latest actions' ids: one sent again (its answer lost) isn't done twice. */
   recent: string[];
+}
+
+/** What farms made before a field existed lack: added (a farm read from the database goes through it). */
+export function withDefaults(farm: Farm): Farm {
+  farm.construction ??= {};
+  farm.skills ??= {};
+  farm.skillResetAt ??= 0;
+  farm.skillCarry ??= {};
+  farm.marketSeenAt ??= 0;
+  farm.recent ??= [];
+  return farm;
 }
 
 export function emptyPlot(index: number, state = 0): Plot {
@@ -86,6 +108,11 @@ export function newFarm(plotIndices: number[], starter: number): Farm {
     taskProgress: {},
     traderSales: {},
     lastSleptAt: 0,
+    construction: {},
+    skills: {},
+    skillResetAt: 0,
+    skillCarry: {},
+    marketSeenAt: 0,
     recent: [],
   };
 }
@@ -118,12 +145,17 @@ export function growth(p: Plot, t: number) {
   if (!crop || p.state !== 2) {
     return 0;
   }
-  return Math.min(crop.grow, p.grown + Math.max(0, Math.min(t, p.wetUntil) - p.grownAt));
+  return Math.min(growNeed(p), p.grown + Math.max(0, Math.min(t, p.wetUntil) - p.grownAt));
+}
+
+/** Seconds of growing the bed's crop needs. */
+export function growNeed(p: Plot) {
+  return p.need ?? findCrop(p.crop)?.grow ?? 0;
 }
 
 export function isRipe(p: Plot, t: number) {
   const crop = findCrop(p.crop);
-  return !!crop && p.state === 2 && growth(p, t) >= crop.grow;
+  return !!crop && p.state === 2 && growth(p, t) >= growNeed(p);
 }
 
 /** Planted, not ripe, and the water has run out: it waits for a watering. */
@@ -238,6 +270,11 @@ export function migrate(old: Record<string, unknown>, now: number): Farm {
     taskProgress: {},
     traderSales: rec(old.traderSales),
     lastSleptAt: 0,
+    construction: {},
+    skills: {},
+    skillResetAt: 0,
+    skillCarry: {},
+    marketSeenAt: 0,
     recent: [],
   };
 }

@@ -3,7 +3,7 @@ import { concat, keccak256, recoverAddress, toBytes, verifyMessage } from 'viem'
 import { addCurrency } from './currency';
 import { prisma } from './db';
 import { incoming, isNetwork, NETWORKS, type NetworkId, tonRaw, tronBase58, usdPrice } from './networks';
-import { shopSettings, type Pack } from './shop';
+import { credit, isGemPack, shopSettings, type Pack } from './shop';
 
 /**
  * Players' own wallets: they prove one is theirs by signing a message on the website (the game opens
@@ -150,9 +150,12 @@ export function verifyTonProof(rawAddress: string, proof: TonProof, domain: stri
 
 // ----------------------------------------------------------------------------- deposits
 
-/** BLOOM for a dollar amount: at the rate of the biggest pack it pays for (the smallest pack's rate below that). */
+/** BLOOM for a dollar amount: at the rate of the biggest BLOOM pack it pays for (the smallest pack's rate below that). */
 export function bloomForUsd(usd: number, packs: Pack[]) {
-  const sorted = [...packs].sort((a, b) => a.usdCents - b.usdCents);
+  const sorted = packs.filter((p) => !isGemPack(p) && p.bloom > 0).sort((a, b) => a.usdCents - b.usdCents);
+  if (!sorted.length) {
+    return 0;
+  }
   const cents = Math.round(usd * 100);
   const pack = [...sorted].reverse().find((p) => p.usdCents <= cents) ?? sorted[0];
   return Math.floor((cents * pack.bloom) / pack.usdCents);
@@ -160,7 +163,9 @@ export function bloomForUsd(usd: number, packs: Pack[]) {
 
 /**
  * Looks for transfers from the player's linked wallets to the admin's wallets (since each was linked)
- * and credits each once, at bloomForUsd. Returns what was credited.
+ * and credits each once: to the player's order it pays for (the pack they chose: BLOOM or gems, even
+ * if the amount isn't the order's exact one: the wallet is theirs), else as BLOOM at bloomForUsd.
+ * Each is written as a Payment (the admin's list) and in the player's books. Returns what was credited.
  */
 export async function scanDeposits(userId: string) {
   const wallets = await prisma.wallet.findMany({ where: { userId } });
@@ -168,7 +173,7 @@ export async function scanDeposits(userId: string) {
     return [];
   }
   const settings = await shopSettings();
-  const credited: { network: NetworkId; amount: string; bloom: number; txHash: string }[] = [];
+  const credited: { network: NetworkId; amount: string; bloom: number; gems?: number; txHash: string; order?: string }[] = [];
   // One look per coin at what reached the shop's wallet, matched against every wallet of the player's on that chain.
   for (const chain of CHAINS) {
     const mine = wallets.filter((w) => w.chain === chain);
@@ -197,6 +202,27 @@ export async function scanDeposits(userId: string) {
         if (await prisma.payment.findUnique({ where: { txHash: t.hash }, select: { id: true } })) {
           continue; // already credited (to an order, or as a deposit)
         }
+        // An order of theirs it pays for (from 97% of its amount, fees taken, to 110%): its pack.
+        const sent = t.time ?? Date.now();
+        const order = (
+          await prisma.payment.findMany({
+            where: { userId, network: id, txHash: null, status: { in: ['pending', 'confirming', 'expired'] }, createdAt: { gte: new Date(sent - 48 * 3600_000), lte: new Date(sent + 120_000) } },
+            orderBy: { createdAt: 'desc' },
+          })
+        ).find((o) => t.units * 100n >= BigInt(o.units) * 97n && t.units * 100n <= BigInt(o.units) * 110n);
+        if (order) {
+          try {
+            const paid = await credit(order, t.hash, `paid from linked wallet ${shortAddress(wallet.address)}`);
+            if (paid.status === 'paid' && paid.txHash === t.hash) {
+              credited.push({ network: id, amount: (Number(t.units) / 10 ** network.decimals).toString(), bloom: paid.bloom, gems: paid.gems, txHash: t.hash, order: order.id });
+            }
+          } catch (error) {
+            if ((error as { code?: string }).code !== 'P2002') {
+              throw error;
+            }
+          }
+          continue;
+        }
         const price = await usdPrice(id);
         const coins = Number(t.units) / 10 ** network.decimals;
         const usd = coins * price;
@@ -210,7 +236,7 @@ export async function scanDeposits(userId: string) {
               data: {
                 userId, pack: 'deposit', bloom, usdCents: Math.round(usd * 100), network: id, amount: coins.toString(), units: t.units.toString(),
                 address: to, usdPrice: price, status: 'paid', txHash: t.hash, paidAt: new Date(t.time ?? Date.now()), expiresAt: new Date(),
-                note: `from linked wallet ${shortAddress(wallet.address)}`,
+                note: `deposit from linked wallet ${shortAddress(wallet.address)}`,
               },
             });
             await addCurrency(tx, userId, 'bloom', bloom, 'deposit', { coin: id, tx: t.hash });

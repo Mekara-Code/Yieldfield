@@ -12,6 +12,7 @@ interface NetworkInfo {
 interface Pack {
   id: string;
   bloom: number;
+  gems?: number;
   usdCents: number;
   tag?: string;
 }
@@ -46,6 +47,10 @@ interface Order {
   username: string;
   pack: string;
   bloom: number;
+  gems: number;
+  kind: 'order' | 'deposit';
+  fromLinkedWallet: boolean;
+  paidAt: string | null;
   usd: string;
   network: string;
   networkLabel: string;
@@ -63,6 +68,8 @@ interface Totals {
   paidOrders: number;
   usd: string;
   bloom: number;
+  gems: number;
+  fromLinkedWallets: number;
 }
 
 /** fetch as the signed-in admin; the error message (or null) and the body. */
@@ -224,7 +231,7 @@ export default function AdminPage() {
         <h1>Shop admin</h1>
         {totals && (
           <span className="pill">
-            {totals.paidOrders} paid · ${totals.usd} · {totals.bloom.toLocaleString()} BLOOM sold
+            {totals.paidOrders} paid · ${totals.usd} · {totals.bloom.toLocaleString()} BLOOM · {totals.gems.toLocaleString()} gems · {totals.fromLinkedWallets} from linked wallets
           </span>
         )}
       </div>
@@ -250,12 +257,14 @@ export default function AdminPage() {
 
       <section className="card">
         <h2>Packs</h2>
+        <p className="muted small">Sold for crypto in the game&apos;s shop. A pack gives BLOOM or gems; a payment from a player&apos;s linked wallet is credited with the pack of their open order by itself.</p>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Id</th>
-                <th>BLOOM</th>
+                <th>Gives</th>
+                <th>Amount</th>
                 <th>Price (USD)</th>
                 <th>Badge</th>
                 <th />
@@ -268,7 +277,22 @@ export default function AdminPage() {
                     <input value={p.id} onChange={(e) => setPacks(packs.map((q, j) => (j === i ? { ...q, id: e.target.value } : q)))} />
                   </td>
                   <td>
-                    <input type="number" value={p.bloom} onChange={(e) => setPacks(packs.map((q, j) => (j === i ? { ...q, bloom: Number(e.target.value) } : q)))} />
+                    <select
+                      value={(p.gems ?? 0) > 0 ? 'gems' : 'bloom'}
+                      onChange={(e) =>
+                        setPacks(packs.map((q, j) => (j === i ? (e.target.value === 'gems' ? { ...q, gems: q.gems || q.bloom || 100, bloom: 0 } : { ...q, bloom: q.bloom || q.gems || 100, gems: undefined }) : q)))
+                      }
+                    >
+                      <option value="bloom">BLOOM</option>
+                      <option value="gems">gems</option>
+                    </select>
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      value={(p.gems ?? 0) > 0 ? p.gems : p.bloom}
+                      onChange={(e) => setPacks(packs.map((q, j) => (j === i ? ((q.gems ?? 0) > 0 ? { ...q, gems: Number(e.target.value) } : { ...q, bloom: Number(e.target.value) }) : q)))}
+                    />
                   </td>
                   <td>
                     <input type="number" step="0.01" value={(p.usdCents / 100).toFixed(2)} onChange={(e) => setPacks(packs.map((q, j) => (j === i ? { ...q, usdCents: Math.round(Number(e.target.value) * 100) } : q)))} />
@@ -316,7 +340,7 @@ export default function AdminPage() {
 
       <section className="card">
         <h2>VIP plans</h2>
-        <p className="muted small">Bought in the game&apos;s journal (J) with BLOOM. VIP: a golden name, 1.5x reputation from tasks and one more task a day, +5% and bigger orders at the traders.</p>
+        <p className="muted small">Bought in the game&apos;s journal (J) with BLOOM. VIP: a golden name, +600 reputation while it lasts (the market opens), one more task a day, +5% and bigger orders at the traders.</p>
         <div className="table-wrap">
           <table>
             <thead>
@@ -433,7 +457,7 @@ export default function AdminPage() {
 
       <section className="card">
         <div className="row-head" style={{ marginBottom: 10 }}>
-          <h2 style={{ margin: 0 }}>Orders</h2>
+          <h2 style={{ margin: 0 }}>Transactions</h2>
           <div className="tabs" style={{ marginBottom: 0, marginLeft: 'auto' }}>
             {STATUSES.map((s) => (
               <button key={s || 'all'} aria-selected={filter === s} onClick={() => setFilter(s)}>
@@ -457,10 +481,15 @@ export default function AdminPage() {
             <tbody>
               {orders.map((o) => (
                 <tr key={o.id}>
-                  <td className="small">{new Date(o.createdAt).toLocaleString()}</td>
+                  <td className="small">{new Date(o.paidAt ?? o.createdAt).toLocaleString()}</td>
                   <td>{o.username}</td>
                   <td>
-                    {o.bloom.toLocaleString()} · ${o.usd}
+                    {o.gems > 0 ? `${o.gems.toLocaleString()} gems` : `${o.bloom.toLocaleString()} BLOOM`} · ${o.usd}
+                    <br />
+                    <span className="muted small">
+                      {o.kind === 'deposit' ? 'deposit' : `pack ${o.pack}`}
+                      {o.fromLinkedWallet ? ' · linked wallet' : ''}
+                    </span>
                   </td>
                   <td className="small">
                     <b>
@@ -501,7 +530,7 @@ export default function AdminPage() {
               {orders.length === 0 && (
                 <tr>
                   <td colSpan={6} className="muted">
-                    No orders
+                    No transactions
                   </td>
                 </tr>
               )}

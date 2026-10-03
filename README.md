@@ -206,21 +206,83 @@ one more. Up to two are deliveries to the farm's traders (Gus the grocer: crops,
 milk, Bruno the butcher: wool and leather), the rest farm work (water, plant, harvest, milk, shear,
 collect eggs, feed animals, earn coins selling). The server counts them as the actions come (in the
 farm: `taskDay`, `taskProgress`) and pays each one as soon as it's done, in the same transaction:
-experience and coins on the farm, reputation to the player (once per task: `TaskClaim`). Doing them
-all gives a bonus of experience, gems and reputation.
+experience and coins on the farm (once per task: `TaskClaim`). Doing them all gives a bonus of
+experience and gems. Tasks give no reputation.
 
-**Reputation** (src/lib/reputation.ts) puts the player in a tier: Newcomer, Good Neighbor (100),
-Trusted Farmer (300), Respected (700), Renowned (1500), Valley Legend (3000). The tier sets how much
-more than the shipping bin the traders pay and how many pieces each buys a day, and (for later) how
-much BLOOM can be withdrawn a day and how many things listed on a market.
+**Reputation** (src/lib/reputation.ts) is worked out each time from what ties the farm to a real
+person: 25 for each linked wallet, 50 for a linked Discord account, 600 while VIP lasts, plus what the
+admins give (`User.reputation`, which also keeps what tasks gave before 1.6, minus what the 1.6
+migration took back). Unlinking takes its part away. It puts the player in a tier: Newcomer, Good
+Neighbor (100), Trusted Farmer (300), Respected (700), Renowned (1500), Valley Legend (3000). The tier
+sets how much more than the shipping bin the traders pay, how many pieces each buys a day, how many
+market listings at once, and (for later) how much BLOOM can be withdrawn a day. The market itself takes
+600 reputation, so VIP opens it.
 
 **VIP** (`User.vipUntil`) is bought in the game's journal with BLOOM (the `buy_vip` action) or given
-by an admin: a golden name over the player's head, 1.5x reputation from tasks and one more
-task a day, +5% and 1.5x bigger orders at the traders, and (for later) double withdrawals and more
-listings. Plans (days, BLOOM) are set in /admin.
+by an admin: a golden name over the player's head, +600 reputation while it lasts, one more task a
+day, +5% and 1.5x bigger orders at the traders, 5 more market listings, and (for later) double
+withdrawals. Plans (days, BLOOM) are set in /admin.
 
 | | |
 |---|---|
 | `GET /api/tasks` | today's tasks (progress, claimed or not), the all-done bonus, the player's standing |
+| `GET /api/me` | also the player's linked wallets and Discord (each gives reputation) |
+| `GET /api/me/history` | `{ purchases, ledger }`: crypto purchases (orders and wallet deposits) and every BLOOM and gem change |
 | `GET /api/vip` / `POST /api/vip` | the standing and VIP plans / `{ plan }` → buys it with BLOOM |
 | `POST /api/admin/player` | `{ username, vipDays?, reputation? }` (admins) |
+
+## Skills
+
+Every player level gives a skill point (src/lib/game/defs.ts `SKILL_TRACKS`, the `skill` action):
+
+- **Combat**: +100 combat power a level (shown on the player's name and in the game's skills, K).
+- **Farming**, **Cattle** (cows), **Sheep**, **Poultry** (hens): a *time* track (5% off their timers a
+  level: a crop's growing, an animal's milk, wool or eggs) and a *yield* track (5% more a level, the
+  fractions kept till they make a whole one), six levels each.
+- **Building**: time only, 10% a level off how long a building takes to go up (buildings now take
+  real time: the hen house 30 min, the market stall 3 h, the barn 2 h; gems finish them).
+
+`skill_reset` takes all the points back to put in again, once every three months (the first time
+whenever). A crop keeps the growing time it was planted with (`plot.need`); an animal's timer the one
+it started with.
+
+## The market
+
+Players sell crops, products and animals to each other for BLOOM at the market stall they build on
+their farm (src/lib/market.ts; the `market_list`, `market_buy` and `market_cancel` actions; the
+`Listing` table). It takes 600 reputation to sell or buy; the listings at once come from the tier
+(+5 for VIP). A listing's goods leave the seller's farm (the server holds them) until it's bought (the
+BLOOM goes to the seller at once, in the buyer's transaction, written in both their books), taken
+back, or it runs out after 72 hours (given back at the seller's next action). The anti-cheat rules:
+
+- a price must be within 10% (up or down) of the **going price** of the same thing: its cheapest
+  listing now, else what it last sold for (14 days), else its base (a tenth of what the game pays for
+  it, in BLOOM; an animal's from its price, more for every ten levels: animals are compared by kind
+  and ten-level band, "Cow@1");
+- nobody buys their own listing; a listing is bought once (the row is taken in the transaction);
+- an animal goes only to a farm with its home built, the level for it and room.
+
+| | |
+|---|---|
+| `GET /api/market` | what's on sale (by thing), the player's listings, the going prices of what they could sell, their reputation and listings |
+| `GET /api/market/listings?key=` | one thing's listings, cheapest first |
+
+## Discord
+
+Linking a Discord account gives 50 reputation (one farm per Discord account). The game's journal (or
+the market, or the site's dashboard) starts it: `POST /api/discord/requests` → open its url
+(`/api/discord/start`, then Discord's consent page, scope `identify`) → `/api/discord/callback` links
+it → the game asks `GET /api/wallet/requests/{code}` till it's done. `DELETE /api/discord` unlinks.
+
+To turn it on: make an application at https://discord.com/developers/applications, add the redirect
+`https://<your site>/api/discord/callback` under OAuth2, and set `DISCORD_CLIENT_ID` and
+`DISCORD_CLIENT_SECRET` (on Vercel: Settings → Environment Variables, then redeploy).
+`DISCORD_REDIRECT_URI` overrides the redirect.
+
+## Packs of gems for crypto, and deposits
+
+A shop pack (in /admin) gives BLOOM or gems. An order's payment credits its pack; a payment from a
+player's linked wallet credits the pack of their open order even if the amount is a little off
+(97–110% of it), and otherwise becomes BLOOM at the packs' rate. Each is a `Payment` (the admin's
+Transactions list, marked "linked wallet") and a line in the player's history (the game's shop:
+HISTORY, and the site's dashboard).

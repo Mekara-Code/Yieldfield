@@ -21,7 +21,11 @@ const ActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('sleep'), passedOut: z.boolean().optional() }),
   z.object({ type: z.literal('buy_vip'), plan: z.string().max(24) }),
   z.object({ type: z.literal('buy_gems'), pack: z.string().max(24) }),
-  z.object({ type: z.literal('speedup'), target: z.enum(['plot', 'product', 'wool']), id: z.string().max(40) }),
+  z.object({ type: z.literal('speedup'), target: z.enum(['plot', 'product', 'wool', 'building']), id: z.string().max(40) }),
+  z.object({ type: z.literal('skill'), track: z.string().max(32) }),
+  z.object({ type: z.literal('skill_reset') }),
+  z.object({ type: z.literal('market_list'), item: z.string().max(32).optional(), animal: Id.optional(), count: z.number().int().min(1).max(999).optional(), price: z.number().int().min(1).max(10_000_000) }),
+  z.object({ type: z.enum(['market_cancel', 'market_buy']), listing: z.string().regex(/^[a-z0-9]{10,40}$/) }),
 ]);
 
 const Body = z.object({ id: z.string().regex(/^[A-Za-z0-9-]{8,64}$/), action: ActionSchema });

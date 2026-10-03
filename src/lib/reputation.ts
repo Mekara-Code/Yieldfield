@@ -2,11 +2,18 @@ import { z } from 'zod';
 import { prisma } from './db';
 
 /**
- * A player's standing in the valley: reputation, earned with the daily tasks (src/lib/tasks.ts), puts
- * them in a tier, and each tier allows more: better prices and bigger orders at the traders now; BLOOM
- * withdrawals and market listings once those open. VIP (bought with BLOOM, for some days) raises it all
- * and gilds their name.
+ * A player's standing in the valley. Reputation comes from what ties the farm to a real person: each
+ * linked wallet, a linked Discord account, VIP while it lasts, and what the admins give (User.reputation,
+ * which also keeps what was earned before tasks stopped giving it). It's worked out each time from those,
+ * so unlinking takes it away again. It puts the player in a tier, and each tier allows more: better prices
+ * and bigger orders at the traders, listings on the market (which needs MARKET_REPUTATION), and later
+ * BLOOM withdrawals. VIP also gilds their name.
  */
+
+/** Reputation each source gives. */
+export const REPUTATION_SOURCES = { wallet: 25, discord: 50, vip: 600 };
+/** Reputation it takes to sell or buy on the market. */
+export const MARKET_REPUTATION = 600;
 
 export interface Tier {
   id: string;
@@ -32,9 +39,8 @@ export const TIERS: Tier[] = [
   { id: 'legend', name: 'Valley Legend', min: 3000, traderBonus: 10, traderCap: 160, withdrawPerDay: 15000, listings: 20 },
 ];
 
-/** What VIP adds on top of the tier. */
+/** What VIP adds on top of the tier (and its REPUTATION_SOURCES.vip). */
 export const VIP_PERKS = {
-  reputationMultiplier: 1.5,
   extraTasks: 1,
   traderBonus: 5,
   traderCapMultiplier: 1.5,
@@ -74,26 +80,63 @@ export function isVip(vipUntil: Date | null | undefined, now = new Date()) {
   return !!vipUntil && vipUntil > now;
 }
 
-/** Everything the game shows about it: the tier, the next one, what they're allowed, VIP and its plans. */
-export async function standing(user: { reputation: number; vipUntil: Date | null }) {
-  const index = tierFor(user.reputation);
+/** What reputation is worked out from. */
+export interface StandingSource {
+  reputation: number;
+  vipUntil: Date | null;
+  discordId?: string | null;
+  /** Wallets linked to the farm. */
+  wallets?: number;
+}
+
+export const STANDING_SELECT = { reputation: true, vipUntil: true, discordId: true, _count: { select: { wallets: true } } } as const;
+
+/** A user row read with STANDING_SELECT, as a StandingSource. */
+export function sourceOf(user: { reputation: number; vipUntil: Date | null; discordId: string | null; _count: { wallets: number } }): StandingSource {
+  return { reputation: user.reputation, vipUntil: user.vipUntil, discordId: user.discordId, wallets: user._count.wallets };
+}
+
+/** The player's reputation now, and where it comes from. */
+export function reputationOf(user: StandingSource, now = new Date()) {
+  const wallets = user.wallets ?? 0;
+  const parts = {
+    base: Math.max(0, user.reputation),
+    wallets: wallets * REPUTATION_SOURCES.wallet,
+    discord: user.discordId ? REPUTATION_SOURCES.discord : 0,
+    vip: isVip(user.vipUntil, now) ? REPUTATION_SOURCES.vip : 0,
+  };
+  return { total: parts.base + parts.wallets + parts.discord + parts.vip, parts, walletCount: wallets, discord: !!user.discordId };
+}
+
+/** The tier's perks, with VIP's on top. */
+export function perksOf(user: StandingSource) {
+  const tier = TIERS[tierFor(reputationOf(user).total)];
+  const vip = isVip(user.vipUntil);
+  return {
+    traderBonus: tier.traderBonus + (vip ? VIP_PERKS.traderBonus : 0),
+    traderCap: Math.round(tier.traderCap * (vip ? VIP_PERKS.traderCapMultiplier : 1)),
+    withdrawPerDay: tier.withdrawPerDay * (vip ? VIP_PERKS.withdrawMultiplier : 1),
+    listings: tier.listings + (vip ? VIP_PERKS.extraListings : 0),
+  };
+}
+
+/** Everything the game shows about it: the reputation and its sources, the tier, the next one, what they're allowed, VIP and its plans. */
+export async function standing(user: StandingSource) {
+  const rep = reputationOf(user);
+  const index = tierFor(rep.total);
   const tier = TIERS[index];
   const next = TIERS[index + 1] ?? null;
   const vip = isVip(user.vipUntil);
   return {
-    reputation: user.reputation,
+    reputation: rep.total,
+    sources: { ...rep.parts, walletCount: rep.walletCount, discordLinked: rep.discord, perWallet: REPUTATION_SOURCES.wallet, forDiscord: REPUTATION_SOURCES.discord, forVip: REPUTATION_SOURCES.vip },
     tier,
     next,
-    progress: next ? (user.reputation - tier.min) / (next.min - tier.min) : 1,
+    progress: next ? (rep.total - tier.min) / (next.min - tier.min) : 1,
     vip,
     vipUntil: vip ? user.vipUntil!.toISOString() : null,
-    perks: {
-      traderBonus: tier.traderBonus + (vip ? VIP_PERKS.traderBonus : 0),
-      traderCap: Math.round(tier.traderCap * (vip ? VIP_PERKS.traderCapMultiplier : 1)),
-      withdrawPerDay: tier.withdrawPerDay * (vip ? VIP_PERKS.withdrawMultiplier : 1),
-      listings: tier.listings + (vip ? VIP_PERKS.extraListings : 0),
-      reputationMultiplier: vip ? VIP_PERKS.reputationMultiplier : 1,
-    },
+    perks: perksOf(user),
+    market: { needs: MARKET_REPUTATION, open: rep.total >= MARKET_REPUTATION },
     tiers: TIERS,
     vipPerks: VIP_PERKS,
     vipPlans: await vipPlans(),
@@ -101,8 +144,8 @@ export async function standing(user: { reputation: number; vipUntil: Date | null
 }
 
 export async function standingOf(userId: string) {
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { reputation: true, vipUntil: true } });
-  return standing(user);
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: STANDING_SELECT });
+  return standing(sourceOf(user));
 }
 
 /** An admin's change: VIP days (negative takes them away) and reputation (added). */
@@ -120,7 +163,7 @@ export async function adjustPlayer(username: string, change: { vipDays?: number;
     const until = from + change.vipDays * 86_400_000;
     data.vipUntil = until > Date.now() ? new Date(until) : null;
   }
-  const updated = await prisma.user.update({ where: { id: user.id }, data, select: { username: true, reputation: true, vipUntil: true } });
+  const updated = await prisma.user.update({ where: { id: user.id }, data, select: { username: true, ...STANDING_SELECT } });
   await prisma.farmEvent.create({ data: { userId: user.id, kind: 'admin_adjust', day: 0, data: { by, vipDays: change.vipDays ?? 0, reputation: change.reputation ?? 0 } } });
-  return { username: updated.username, standing: await standing(updated) };
+  return { username: updated.username, standing: await standing(sourceOf(updated)) };
 }

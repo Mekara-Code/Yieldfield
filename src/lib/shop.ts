@@ -6,19 +6,27 @@ import type { Payment } from '../generated/prisma/client';
 import { formatUnits, incoming, isNetwork, NETWORKS, type NetworkId, usdPrice } from './networks';
 
 /**
- * The BLOOM shop: packs priced in dollars, paid in crypto to the wallets the admin sets (/admin).
+ * The shop: packs of BLOOM or of gems priced in dollars, paid in crypto to the wallets the admin sets (/admin).
  * An order fixes the exact amount (the coin's price then, plus a tiny offset no other open order
  * has) for ORDER_MINUTES; a transfer of that amount sent in that time credits the pack to the player's
  * BLOOM (kept on the server). After that a new order, at a new price, is needed.
  */
 
-export const PackSchema = z.object({
-  id: z.string().regex(/^[a-z0-9_-]{1,24}$/),
-  bloom: z.number().int().min(1).max(10_000_000),
-  usdCents: z.number().int().min(50).max(1_000_000),
-  tag: z.string().max(24).optional(),
-});
+export const PackSchema = z
+  .object({
+    id: z.string().regex(/^[a-z0-9_-]{1,24}$/),
+    /** BLOOM it gives (0 for a gem pack). */
+    bloom: z.number().int().min(0).max(10_000_000),
+    /** A gem pack: the gems it gives. */
+    gems: z.number().int().min(0).max(10_000_000).optional(),
+    usdCents: z.number().int().min(50).max(1_000_000),
+    tag: z.string().max(24).optional(),
+  })
+  .refine((p) => p.bloom > 0 || (p.gems ?? 0) > 0, { message: 'A pack gives BLOOM or gems' });
 export type Pack = z.infer<typeof PackSchema>;
+
+/** A gem pack gives gems; any other, BLOOM. */
+export const isGemPack = (p: { gems?: number | null }) => (p.gems ?? 0) > 0;
 
 export const DEFAULT_PACKS: Pack[] = [
   { id: 'p100', bloom: 100, usdCents: 99 },
@@ -54,11 +62,20 @@ export async function shopSettings(): Promise<ShopSettings> {
 /** What the shop offers: the packs, and the coins whose wallet the admin has set. */
 export async function catalog() {
   const settings = await shopSettings();
-  // Bigger packs give more BLOOM a dollar: how much more than the smallest one.
-  const smallest = [...settings.packs].sort((a, b) => a.usdCents - b.usdCents)[0];
-  const rate = smallest.bloom / smallest.usdCents;
+  // Bigger packs give more a dollar: how much more than the smallest of the same kind (BLOOM or gems).
+  const amount = (p: Pack) => (isGemPack(p) ? p.gems! : p.bloom);
+  const rateOf = (gems: boolean) => {
+    const smallest = settings.packs.filter((p) => isGemPack(p) === gems).sort((a, b) => a.usdCents - b.usdCents)[0];
+    return smallest ? amount(smallest) / smallest.usdCents : 1;
+  };
   return {
-    packs: settings.packs.map((p) => ({ ...p, usd: (p.usdCents / 100).toFixed(2), bonusPercent: Math.max(0, Math.round(((p.bloom / p.usdCents) / rate - 1) * 100)) })),
+    packs: settings.packs.map((p) => ({
+      ...p,
+      gems: p.gems ?? 0,
+      currency: isGemPack(p) ? 'gems' : 'bloom',
+      usd: (p.usdCents / 100).toFixed(2),
+      bonusPercent: Math.max(0, Math.round(((amount(p) / p.usdCents) / rateOf(isGemPack(p)) - 1) * 100)),
+    })),
     networks: Object.keys(settings.wallets).filter(isNetwork).map((id) => ({ id, label: NETWORKS[id].label, asset: NETWORKS[id].asset })),
     orderMinutes: settings.orderMinutes,
   };
@@ -108,7 +125,8 @@ export async function createOrder(userId: string, packId: string, networkId: str
     data: {
       userId,
       pack: pack.id,
-      bloom: pack.bloom,
+      bloom: isGemPack(pack) ? 0 : pack.bloom,
+      gems: isGemPack(pack) ? pack.gems! : 0,
       usdCents: pack.usdCents,
       network: networkId,
       amount: formatUnits(units, network.decimals),
@@ -131,6 +149,7 @@ export function publicOrder(p: Payment, bloomBalance?: number) {
     id: p.id,
     pack: p.pack,
     bloom: p.bloom,
+    gems: p.gems,
     usd: (p.usdCents / 100).toFixed(2),
     network: p.network,
     networkLabel: network?.label ?? p.network,
@@ -147,8 +166,8 @@ export function publicOrder(p: Payment, bloomBalance?: number) {
   };
 }
 
-/** Credits a paid order to the player's BLOOM, once (the tx can only be used by one order). */
-async function credit(p: Payment, txHash: string, note?: string) {
+/** Credits a paid order to the player (its BLOOM or gems), once (the tx can only be used by one order). */
+export async function credit(p: Payment, txHash: string, note?: string) {
   return prisma.$transaction(async (tx) => {
     const done = await tx.payment.updateMany({
       where: { id: p.id, status: { in: ['pending', 'confirming', 'expired'] } },
@@ -157,8 +176,14 @@ async function credit(p: Payment, txHash: string, note?: string) {
     if (done.count === 0) {
       return tx.payment.findUniqueOrThrow({ where: { id: p.id } });
     }
-    await addCurrency(tx, p.userId, 'bloom', p.bloom, 'pack', { order: p.id, usd: (p.usdCents / 100).toFixed(2) });
-    await tx.farmEvent.create({ data: { userId: p.userId, kind: 'purchase', day: 0, data: { bloom: p.bloom, usd: (p.usdCents / 100).toFixed(2), coin: p.network } } });
+    const why = { order: p.id, usd: (p.usdCents / 100).toFixed(2), coin: p.network, tx: txHash };
+    if (p.bloom > 0) {
+      await addCurrency(tx, p.userId, 'bloom', p.bloom, 'pack', why);
+    }
+    if (p.gems > 0) {
+      await addCurrency(tx, p.userId, 'gems', p.gems, 'pack', why);
+    }
+    await tx.farmEvent.create({ data: { userId: p.userId, kind: 'purchase', day: 0, data: { bloom: p.bloom, gems: p.gems, usd: (p.usdCents / 100).toFixed(2), coin: p.network } } });
     return tx.payment.findUniqueOrThrow({ where: { id: p.id } });
   });
 }

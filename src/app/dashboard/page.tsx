@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, getAccessToken, itemName, refreshAccess, setAccessToken } from '../../lib/client';
 import { BloomIcon, CoinIcon, GemIcon, MONEY } from '../../components/Bloom';
+import { HistoryCard, MarketCard, SkillsCard, StandingCard, type MeAccount } from './Account';
 
 /** The farm as the server keeps it (src/lib/game/state.ts): times are Unix seconds, the server's clock. */
 interface Plot {
@@ -38,6 +39,11 @@ interface FarmState {
   animals: Animal[];
   buildings: string[];
   companion: string;
+  construction?: Record<string, number>;
+  skills?: Record<string, number>;
+  skillResetAt?: number;
+  skillPointsFree?: number;
+  combatPower?: number;
 }
 interface Wallet {
   coins: number;
@@ -49,6 +55,9 @@ interface Defs {
   animals: { kind: Animal['kind']; name: string; product: string; feed: string; feedCount: number }[];
   buildings: { id: string; name: string }[];
   maxEnergy: number;
+  skills?: { id: string; name: string; about: string }[];
+  skillTracks?: { id: string; skill: string; part: 'power' | 'time' | 'yield'; max: number; step: number }[];
+  skillResetSeconds?: number;
 }
 interface FarmEvent {
   id: string;
@@ -57,7 +66,7 @@ interface FarmEvent {
   data: Record<string, string | number | boolean>;
   at: string;
 }
-interface Me {
+interface Me extends MeAccount {
   username: string;
   playing: boolean;
 }
@@ -132,8 +141,6 @@ function describe(e: FarmEvent) {
       return `Bought ${d.name} the ${String(d.kind).toLowerCase()} (${d.cost} coins)`;
     case 'buy_bed':
       return `Bought bed ${d.bed} (${d.cost} coins)`;
-    case 'build':
-      return `Built the ${String(d.building).toLowerCase() === 'coop' ? 'hen house' : 'barn'} (${d.cost} coins)`;
     case 'harvest':
       return `Harvested ${d.count} ${d.crop}`;
     case 'collect':
@@ -159,7 +166,27 @@ function describe(e: FarmEvent) {
     case 'gems':
       return `Bought ${d.gems} gems (${d.bloom} ${MONEY})`;
     case 'purchase':
-      return `Bought ${d.bloom} ${MONEY} ($${d.usd} in ${String(d.coin).toUpperCase()})`;
+      return `Bought ${Number(d.gems) > 0 ? `${d.gems} gems` : `${d.bloom} ${MONEY}`} ($${d.usd} in ${String(d.coin).toUpperCase()})${d.wallet ? ', from a linked wallet' : ''}`;
+    case 'build':
+      return `Started building the ${String(d.building) === 'Coop' ? 'hen house' : String(d.building) === 'Market' ? 'market stall' : 'barn'} (${d.cost} coins)`;
+    case 'built':
+      return `The ${String(d.building) === 'Coop' ? 'hen house' : String(d.building) === 'Market' ? 'market stall' : 'barn'} is built`;
+    case 'skill':
+      return `Skill: ${String(d.track).replace('.', ' ')} level ${d.level}`;
+    case 'skill_reset':
+      return `Reset the skills (${d.points} points back)`;
+    case 'discord':
+      return `Linked Discord: ${d.name} (+${d.reputation} reputation)`;
+    case 'market_list':
+      return `Put ${d.count} ${itemName(String(d.item))} on the market for ${d.price} ${MONEY}`;
+    case 'market_cancel':
+      return `Took ${d.count} ${itemName(String(d.item))} off the market`;
+    case 'market_expired':
+      return `${d.count} ${itemName(String(d.item))} came back from the market unsold`;
+    case 'market_buy':
+      return `Bought ${d.count} ${itemName(String(d.item))} from ${d.from} for ${d.price} ${MONEY}`;
+    case 'market_sold':
+      return `Sold ${d.count} ${itemName(String(d.item))} to ${d.to} for ${d.price} ${MONEY}`;
     case 'character':
       return `Changed character to ${d.to} (${d.cost} ${MONEY})`;
     case 'admin_adjust':
@@ -312,6 +339,13 @@ export default function Dashboard() {
     };
   }, [connect, router, take]);
 
+  const reloadMe = useCallback(async () => {
+    const who = await api<Me>('/api/me');
+    if (who) {
+      setMe(who);
+    }
+  }, []);
+
   async function signOut() {
     stopped.current = true;
     socket.current?.close();
@@ -349,9 +383,12 @@ export default function Dashboard() {
       </div>
 
       {!state ? (
-        <div className="card">
-          <h2>No farm yet</h2>
-          <p className="muted">Sign into the game with this account: your farm appears here as soon as it starts.</p>
+        <div className="grid">
+          <div className="card">
+            <h2>No farm yet</h2>
+            <p className="muted">Sign into the game with this account: your farm appears here as soon as it starts.</p>
+          </div>
+          <StandingCard me={me} onChange={reloadMe} />
         </div>
       ) : (
         <div className="grid">
@@ -421,6 +458,11 @@ export default function Dashboard() {
                 Built: {state.buildings.map((b) => defs?.buildings.find((d) => d.id === b)?.name ?? b).join(', ')}
               </p>
             )}
+            {Object.entries(state.construction ?? {}).map(([b, readyAt]) => (
+              <p className="muted small" key={b}>
+                Going up: {defs?.buildings.find((d) => d.id === b)?.name ?? b} · {readyAt > t ? `done in ${duration(readyAt - t)}` : 'done'}
+              </p>
+            ))}
           </div>
 
           <div className="card">
@@ -496,6 +538,19 @@ export default function Dashboard() {
             </div>
           </div>
 
+          <StandingCard me={me} onChange={reloadMe} />
+          {defs?.skills && defs.skillTracks && (
+            <SkillsCard
+              skills={state.skills ?? {}}
+              free={state.skillPointsFree ?? 0}
+              power={state.combatPower ?? 0}
+              resetAt={state.skillResetAt ?? 0}
+              defs={{ skills: defs.skills, skillTracks: defs.skillTracks, skillResetSeconds: defs.skillResetSeconds ?? 90 * 86400 }}
+              now={t}
+            />
+          )}
+          <MarketCard />
+
           <div className="card">
             <h2>What happened</h2>
             {events.length ? (
@@ -511,6 +566,7 @@ export default function Dashboard() {
               <p className="muted small">Nothing yet</p>
             )}
           </div>
+          <HistoryCard />
         </div>
       )}
     </>

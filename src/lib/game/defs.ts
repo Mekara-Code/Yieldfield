@@ -80,13 +80,106 @@ export interface BuildingDef {
   name: string;
   level: number;
   price: number;
+  /** Seconds it takes to put up (less with the building skill). */
+  seconds: number;
   gives: string;
 }
 
 export const BUILDINGS: BuildingDef[] = [
-  { id: 'Coop', name: 'Hen house', level: 3, price: 400, gives: 'Keep hens: an egg each every 4 hours' },
-  { id: 'Barn', name: 'Barn and paddock', level: 5, price: 1200, gives: 'Keep sheep (milk, wool), and cows from level 8' },
+  { id: 'Coop', name: 'Hen house', level: 3, price: 400, seconds: 30 * 60, gives: 'Keep hens: an egg each every 4 hours' },
+  { id: 'Market', name: 'Market stall', level: 4, price: 1000, seconds: 3 * 3600, gives: 'Sell crops, products and animals to other farmers, and buy theirs, for BLOOM (needs 600 reputation)' },
+  { id: 'Barn', name: 'Barn and paddock', level: 5, price: 1200, seconds: 2 * 3600, gives: 'Keep sheep (milk, wool), and cows from level 8' },
 ];
+
+// ----------------------------------------------------------------------------- skills
+
+export type SkillId = 'combat' | 'farming' | 'building' | 'cows' | 'sheep' | 'hens';
+
+/**
+ * A skill's track: combat (each level gives COMBAT_POWER), or a farm skill's time (every level takes
+ * step percent off its timers) or yield (every level gives step percent more, the fractions kept till
+ * they make a whole one). A point a player level to put in them; all taken back once every
+ * SKILL_RESET_SECONDS, to be put in again.
+ */
+export interface SkillTrack {
+  id: string;
+  skill: SkillId;
+  part: 'power' | 'time' | 'yield';
+  max: number;
+  /** Percent a level (power: combat power a level). */
+  step: number;
+}
+
+export interface SkillDef {
+  id: SkillId;
+  name: string;
+  about: string;
+}
+
+export const SKILLS: SkillDef[] = [
+  { id: 'combat', name: 'Combat', about: 'Each level: +100 combat power' },
+  { id: 'farming', name: 'Farming', about: 'Crops: they grow faster, and give more' },
+  { id: 'building', name: 'Building', about: 'Buildings go up faster' },
+  { id: 'cows', name: 'Cattle', about: 'Cows: milk sooner, and more of it' },
+  { id: 'sheep', name: 'Sheep', about: 'Sheep: milk and wool sooner, and more of them' },
+  { id: 'hens', name: 'Poultry', about: 'Hens: eggs sooner, and more of them' },
+];
+
+export const COMBAT_POWER = 100;
+export const SKILL_TRACKS: SkillTrack[] = [
+  { id: 'combat', skill: 'combat', part: 'power', max: 99, step: COMBAT_POWER },
+  { id: 'farming.time', skill: 'farming', part: 'time', max: 6, step: 5 },
+  { id: 'farming.yield', skill: 'farming', part: 'yield', max: 6, step: 5 },
+  { id: 'building.time', skill: 'building', part: 'time', max: 6, step: 10 },
+  { id: 'cows.time', skill: 'cows', part: 'time', max: 6, step: 5 },
+  { id: 'cows.yield', skill: 'cows', part: 'yield', max: 6, step: 5 },
+  { id: 'sheep.time', skill: 'sheep', part: 'time', max: 6, step: 5 },
+  { id: 'sheep.yield', skill: 'sheep', part: 'yield', max: 6, step: 5 },
+  { id: 'hens.time', skill: 'hens', part: 'time', max: 6, step: 5 },
+  { id: 'hens.yield', skill: 'hens', part: 'yield', max: 6, step: 5 },
+];
+/** Skills can be taken back (and put in again) once in this long: three months. */
+export const SKILL_RESET_SECONDS = 90 * 86400;
+
+/** Skill points a player level gives: one a level. */
+export function skillPoints(level: number) {
+  return Math.max(1, level);
+}
+
+export const findTrack = (id: string) => SKILL_TRACKS.find((t) => t.id === id);
+export const ANIMAL_SKILL: Record<AnimalKind, SkillId> = { Chicken: 'hens', Sheep: 'sheep', Cow: 'cows' };
+
+// ----------------------------------------------------------------------------- the market
+
+/**
+ * Selling to other players for BLOOM (src/lib/market.ts). A price may be at most PRICE_BAND above, or
+ * below, the going price of the same thing: its cheapest listing now, else what it last sold for, else
+ * its base here (a tenth of what the game pays for it, in BLOOM; an animal's from its price, more for
+ * every ten levels).
+ */
+export const MARKET = {
+  listingHours: 72,
+  priceBand: 0.1,
+  maxCount: 99,
+  /** A sale this recent sets the going price when nothing's listed. */
+  lastSaleDays: 14,
+};
+
+/** What the price rule compares: an item by its id, an animal by kind and its ten-level band. */
+export function marketKey(id: string, animalXp?: number) {
+  return animalXp === undefined ? id : `${id}@${Math.floor(animalLevel(animalXp) / 10)}`;
+}
+
+/** The going price of one when nothing tells it better. */
+export function marketBase(key: string) {
+  const [id, band] = key.split('@');
+  const animal = findAnimal(id);
+  if (animal) {
+    return (animal.price / 10) * (1 + Number(band ?? 0));
+  }
+  const info = item(id);
+  return info ? info.sell / 10 : 0;
+}
 
 export const START = { coins: 250, seeds: { Wheat: 6, Carrot: 4, Hay: 4 } as Record<string, number> };
 export const MAX_ENERGY = 100;
@@ -201,5 +294,10 @@ export function publicDefs(gemPacks: GemPack[]) {
     sleepSeconds: SLEEP_SECONDS,
     energy: ENERGY,
     gemPacks,
+    skills: SKILLS,
+    skillTracks: SKILL_TRACKS,
+    skillResetSeconds: SKILL_RESET_SECONDS,
+    combatPower: COMBAT_POWER,
+    market: MARKET,
   };
 }

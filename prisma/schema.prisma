@@ -11,33 +11,41 @@ datasource db {
 }
 
 model User {
-  id           String      @id @default(cuid())
-  username     String      @unique
+  id              String        @id @default(cuid())
+  username        String        @unique
   /// Null for accounts made by signing in with a wallet (no email, no password).
-  email        String?     @unique
-  passwordHash String?
-  createdAt    DateTime    @default(now())
-  lastLoginAt  DateTime?
+  email           String?       @unique
+  passwordHash    String?
+  createdAt       DateTime      @default(now())
+  lastLoginAt     DateTime?
   /// Who they play: "Diana" or "Arash", chosen at sign-up (changing it costs BLOOM). Null on accounts from before.
-  character    String?
+  character       String?
   /// Can open /admin (so can the names in ADMIN_USERNAMES).
-  isAdmin      Boolean     @default(false)
-  /// Standing in the valley: earned with the daily tasks (src/lib/reputation.ts: tiers and what each allows).
-  reputation   Int         @default(0)
+  isAdmin         Boolean       @default(false)
+  /// Reputation the admins gave (and what tasks gave before 1.6); linked wallets, Discord and VIP add to it
+  /// as they're worked out (src/lib/reputation.ts: the sources, tiers and what each allows).
+  reputation      Int           @default(0)
   /// VIP until then (bought with BLOOM, or given by an admin); null or past: not VIP.
-  vipUntil     DateTime?
+  vipUntil        DateTime?
   /// The money that comes from outside (crypto packs, wallet deposits, admins): VIP, the partner, gems, trading. Only the server changes it.
-  bloom        Int         @default(0)
+  bloom           Int           @default(0)
   /// Speed-ups (bought with BLOOM, won with the daily tasks). Only the server changes it.
-  gems         Int         @default(0)
-  farm         Farm?
-  sessions     Session[]
-  events       FarmEvent[]
-  payments     Payment[]
-  wallets      Wallet[]
-  dailyTasks   DailyTasks[]
-  taskClaims   TaskClaim[]
-  currencyLog  CurrencyLog[]
+  gems            Int           @default(0)
+  /// The Discord account linked to the farm (OAuth, scope identify): one farm each.
+  discordId       String?       @unique
+  discordName     String?
+  discordAvatar   String?
+  discordLinkedAt DateTime?
+  farm            Farm?
+  sessions        Session[]
+  events          FarmEvent[]
+  payments        Payment[]
+  wallets         Wallet[]
+  dailyTasks      DailyTasks[]
+  taskClaims      TaskClaim[]
+  currencyLog     CurrencyLog[]
+  sales           Listing[]     @relation("sales")
+  purchases       Listing[]     @relation("purchases")
 }
 
 /// A sign-in on one device: the refresh token (stored hashed) that keeps it signed in.
@@ -74,17 +82,17 @@ model Farm {
 
 /// Kept in step with the save's animal list, so animals can be queried on their own.
 model Animal {
-  id           String   @id // the game's id for it
-  farmId       String
-  farm         Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
-  kind         String // Chicken, Sheep, Cow
-  name         String
-  boughtDay    Int
-  lastMilkedDay Int     @default(0)
-  lastShornDay Int      @default(0)
+  id            String   @id // the game's id for it
+  farmId        String
+  farm          Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  kind          String // Chicken, Sheep, Cow
+  name          String
+  boughtDay     Int
+  lastMilkedDay Int      @default(0)
+  lastShornDay  Int      @default(0)
   /// Experience: every 10 levels it gives one more of what it gives.
-  xp           Int      @default(0)
-  updatedAt    DateTime @updatedAt
+  xp            Int      @default(0)
+  updatedAt     DateTime @updatedAt
 
   @@index([farmId])
 }
@@ -102,30 +110,32 @@ model FarmEvent {
   @@index([userId, createdAt])
 }
 
-/// A BLOOM pack bought with crypto: the exact amount to send to the wallet, and whether it came.
+/// A pack (BLOOM or gems) bought with crypto, or a deposit from a linked wallet: the exact amount to send, and whether it came.
 model Payment {
-  id         String    @id @default(cuid())
-  userId     String
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  pack       String
-  bloom      Int
-  usdCents   Int
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pack      String
+  bloom     Int
+  /// A gem pack's gems (then bloom is 0).
+  gems      Int       @default(0)
+  usdCents  Int
   /// The coin and chain paid with (src/lib/shop.ts NETWORKS), e.g. USDT_TRC20.
-  network    String
+  network   String
   /// The exact amount to send (a decimal string) and the same in the coin's smallest units.
-  amount     String
-  units      String
+  amount    String
+  units     String
   /// The wallet it goes to (the admin's, at the time of the order) and the coin's USD price then.
-  address    String
-  usdPrice   Float
+  address   String
+  usdPrice  Float
   /// pending -> paid (credited) | expired | cancelled; "confirming": seen on a chain that needs a block first.
-  status     String    @default("pending")
-  txHash     String?   @unique
-  paidAt     DateTime?
-  createdAt  DateTime  @default(now())
-  expiresAt  DateTime
-  checkedAt  DateTime?
-  note       String?
+  status    String    @default("pending")
+  txHash    String?   @unique
+  paidAt    DateTime?
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  checkedAt DateTime?
+  note      String?
 
   @@index([status, network])
   @@index([userId, createdAt])
@@ -153,13 +163,13 @@ model Wallet {
   @@index([userId])
 }
 
-/// Connecting a wallet from the game: the game makes a request, the player signs on the website, the game asks until it's done.
+/// Connecting a wallet (or Discord) from the game: the game makes a request, the player signs (or authorizes) on the website, the game asks until it's done.
 model WalletRequest {
   /// The secret the game holds (in the link it opens).
   code      String    @id
   /// Short, shown in the game and on the page, to check they're the same request.
   short     String
-  /// link (to the signed-in player) or login.
+  /// link (a wallet, to the signed-in player), login (with a wallet) or discord (link Discord).
   mode      String
   userId    String?
   nonce     String
@@ -215,4 +225,36 @@ model CurrencyLog {
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+/// Something a player put up for sale on the market (src/lib/market.ts), held by the server until it's
+/// sold (the BLOOM goes to the seller), taken back, or runs out (back to the seller's farm).
+model Listing {
+  id        String    @id @default(cuid())
+  sellerId  String
+  seller    User      @relation("sales", fields: [sellerId], references: [id], onDelete: Cascade)
+  /// item (a crop or a product, several) or animal (one)
+  kind      String
+  /// The item's id (Wheat, Egg...) or the animal's kind (Chicken, Sheep, Cow).
+  item      String
+  /// What the price rule compares: the item's id, or the animal's kind and level band ("Cow@1": levels 10-19).
+  key       String
+  count     Int
+  /// BLOOM for all of it, and for one (what's sorted and compared).
+  price     Int
+  unit      Float
+  /// The animal as it was on the farm (name, experience...).
+  animal    Json?
+  /// active -> sold | cancelled | expired (given back)
+  status    String    @default("active")
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  buyerId   String?
+  buyer     User?     @relation("purchases", fields: [buyerId], references: [id], onDelete: SetNull)
+  soldAt    DateTime?
+  closedAt  DateTime?
+
+  @@index([status, key, unit])
+  @@index([sellerId, status])
+  @@index([buyerId])
 }

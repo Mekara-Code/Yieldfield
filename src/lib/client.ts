@@ -54,6 +54,25 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T | 
   return response.ok ? ((await response.json()) as T) : null;
 }
 
+/** As api(), with the server's error message when it fails. */
+export async function apiResult<T>(path: string, init: RequestInit = {}): Promise<{ data: T | null; error: string | null }> {
+  let token = getAccessToken() ?? (await refreshAccess());
+  if (!token) {
+    return { data: null, error: 'Signed out: sign in again' };
+  }
+  const call = (t: string) => fetch(path, { ...init, headers: { ...init.headers, Authorization: `Bearer ${t}` } });
+  let response = await call(token);
+  if (response.status === 401) {
+    token = await refreshAccess();
+    if (!token) {
+      return { data: null, error: 'Signed out: sign in again' };
+    }
+    response = await call(token);
+  }
+  const body = await response.json().catch(() => null);
+  return response.ok ? { data: body as T, error: null } : { data: null, error: (body as { error?: string } | null)?.error ?? `Error ${response.status}` };
+}
+
 const NAMES: Record<string, string> = {
   SheepMilk: "Sheep's milk",
   Milk: 'Milk',
