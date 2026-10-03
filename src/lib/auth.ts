@@ -11,7 +11,8 @@ export type Client = 'game' | 'web';
 export interface PublicUser {
   id: string;
   username: string;
-  email: string;
+  /** Null for accounts made with a wallet. */
+  email: string | null;
   /** "Diana" or "Arash"; null on accounts from before the choice (they choose once, free). */
   character: string | null;
 }

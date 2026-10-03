@@ -13,8 +13,9 @@ datasource db {
 model User {
   id           String      @id @default(cuid())
   username     String      @unique
-  email        String      @unique
-  passwordHash String
+  /// Null for accounts made by signing in with a wallet (no email, no password).
+  email        String?     @unique
+  passwordHash String?
   createdAt    DateTime    @default(now())
   lastLoginAt  DateTime?
   /// Who they play: "Diana" or "Arash", chosen at sign-up (changing it costs BLOOM). Null on accounts from before.
@@ -25,6 +26,7 @@ model User {
   sessions     Session[]
   events       FarmEvent[]
   payments     Payment[]
+  wallets      Wallet[]
 }
 
 /// A sign-in on one device: the refresh token (stored hashed) that keeps it signed in.
@@ -121,4 +123,38 @@ model Setting {
   key       String   @id
   value     Json
   updatedAt DateTime @updatedAt
+}
+
+/// A crypto wallet the player proved is theirs (by signing a message): payments from it are theirs, and it signs them in.
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// evm (BNB Chain, Ethereum...), tron or ton.
+  chain     String
+  /// evm: 0x... lower-case; tron: base58 T...; ton: raw 0:hex.
+  address   String
+  createdAt DateTime @default(now())
+
+  @@unique([chain, address])
+  @@index([userId])
+}
+
+/// Connecting a wallet from the game: the game makes a request, the player signs on the website, the game asks until it's done.
+model WalletRequest {
+  /// The secret the game holds (in the link it opens).
+  code      String    @id
+  /// Short, shown in the game and on the page, to check they're the same request.
+  short     String
+  /// link (to the signed-in player) or login.
+  mode      String
+  userId    String?
+  nonce     String
+  status    String    @default("pending")
+  chain     String?
+  address   String?
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  /// When the game collected its sign-in (a login request signs in once).
+  usedAt    DateTime?
 }

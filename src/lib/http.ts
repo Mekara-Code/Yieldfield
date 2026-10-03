@@ -95,3 +95,12 @@ export const LoginBody = z.object({
 export const RefreshBody = z.object({
   refreshToken: z.string().min(10).max(200).optional(),
 });
+
+/** The site's address as the client reached it (the Host header, not the deployment's own name). */
+export function publicOrigin(request: Request) {
+  const url = new URL(request.url);
+  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? url.host;
+  const proto = request.headers.get('x-forwarded-proto') ?? url.protocol.replace(':', '');
+  return `${proto}://${host}`;
+}
+

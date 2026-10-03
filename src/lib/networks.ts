@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /**
  * The coins a BLOOM pack can be paid with, and how to read each chain for payments to the admin's
  * wallet. Every order gets an amount no other open order has (a few hundredths of a cent apart), so
@@ -71,6 +73,8 @@ export interface Incoming {
   units: bigint;
   time?: number;
   confirmed: boolean;
+  /** Who sent it (evm lower-case 0x..., tron base58, ton raw 0:hex; a UTXO chain's first input). */
+  from?: string;
 }
 
 const USDT_TRON = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
@@ -79,14 +83,56 @@ const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a
 const BSC_RPC = ['https://bsc-rpc.publicnode.com', 'https://bsc-dataseed.bnbchain.org'];
 
 async function getJson(url: string, init?: RequestInit): Promise<unknown> {
-  const response = await fetch(url, { ...init, signal: AbortSignal.timeout(9000), headers: { accept: 'application/json', ...init?.headers } });
-  if (!response.ok) {
-    throw new Error(`${new URL(url).host} answered ${response.status}`);
+  // TronGrid lets more through with a key (TRONGRID_API_KEY, optional); free APIs answer 429 when busy: wait and try again.
+  const headers: Record<string, string> = { accept: 'application/json', ...(init?.headers as Record<string, string> | undefined) };
+  if (url.startsWith('https://api.trongrid.io') && process.env.TRONGRID_API_KEY) {
+    headers['TRON-PRO-API-KEY'] = process.env.TRONGRID_API_KEY;
   }
-  return response.json();
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(url, { ...init, signal: AbortSignal.timeout(9000), headers });
+    if (response.ok) {
+      return response.json();
+    }
+    if (attempt >= 2 || (response.status !== 429 && response.status < 500)) {
+      throw new Error(`${new URL(url).host} answered ${response.status}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
+  }
 }
 
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+
+/** A Tron hex address (41... or 0x...) as base58 (T...). */
+export function tronBase58(hex: string) {
+  const body = hex.replace(/^0x/, '').toLowerCase();
+  const bytes = Buffer.from(body.length === 40 ? '41' + body : body, 'hex');
+  const check = createHash('sha256').update(createHash('sha256').update(bytes).digest()).digest().subarray(0, 4);
+  let n = BigInt('0x' + Buffer.concat([bytes, check]).toString('hex'));
+  let out = '';
+  while (n > 0n) {
+    out = B58[Number(n % 58n)] + out;
+    n /= 58n;
+  }
+  return out;
+}
+
+/** A TON address (user-friendly base64 or raw) as raw "wc:hex", or null. */
+export function tonRaw(address: string): string | null {
+  const raw = /^(-?\d+):([0-9a-fA-F]{64})$/.exec(address);
+  if (raw) {
+    return `${raw[1]}:${raw[2].toLowerCase()}`;
+  }
+  try {
+    const bytes = Buffer.from(address.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+    if (bytes.length !== 36) {
+      return null;
+    }
+    const wc = bytes[1] === 0xff ? -1 : bytes[1];
+    return `${wc}:${bytes.subarray(2, 34).toString('hex')}`;
+  } catch {
+    return null;
+  }
+}
 
 /** A Tron base58 address as the hex the chain's raw transactions use (41...). */
 export function tronHex(address: string) {
@@ -104,16 +150,16 @@ export function tronHex(address: string) {
 
 async function tronTrc20(address: string, since: number): Promise<Incoming[]> {
   const url = `https://api.trongrid.io/v1/accounts/${address}/transactions/trc20?only_to=true&only_confirmed=true&limit=100&min_timestamp=${since}&contract_address=${USDT_TRON}`;
-  const body = (await getJson(url)) as { data?: { transaction_id: string; value: string; block_timestamp: number; to: string; token_info?: { address?: string } }[] };
+  const body = (await getJson(url)) as { data?: { transaction_id: string; value: string; block_timestamp: number; from: string; to: string; token_info?: { address?: string } }[] };
   return (body.data ?? [])
     .filter((t) => t.to === address && (!t.token_info?.address || t.token_info.address === USDT_TRON))
-    .map((t) => ({ hash: t.transaction_id, units: BigInt(t.value), time: t.block_timestamp, confirmed: true }));
+    .map((t) => ({ hash: t.transaction_id, units: BigInt(t.value), time: t.block_timestamp, confirmed: true, from: t.from }));
 }
 
 async function tronNative(address: string, since: number): Promise<Incoming[]> {
   const url = `https://api.trongrid.io/v1/accounts/${address}/transactions?only_to=true&only_confirmed=true&limit=100&min_timestamp=${since}`;
   const body = (await getJson(url)) as {
-    data?: { txID: string; block_timestamp: number; ret?: { contractRet?: string }[]; raw_data?: { contract?: { type: string; parameter?: { value?: { amount?: number; to_address?: string } } }[] } }[];
+    data?: { txID: string; block_timestamp: number; ret?: { contractRet?: string }[]; raw_data?: { contract?: { type: string; parameter?: { value?: { amount?: number; to_address?: string; owner_address?: string } } }[] } }[];
   };
   const mine = tronHex(address);
   const out: Incoming[] = [];
@@ -122,7 +168,8 @@ async function tronNative(address: string, since: number): Promise<Incoming[]> {
     if (c?.type !== 'TransferContract' || t.ret?.[0]?.contractRet !== 'SUCCESS' || c.parameter?.value?.to_address?.toLowerCase() !== mine) {
       continue;
     }
-    out.push({ hash: t.txID, units: BigInt(c.parameter.value.amount ?? 0), time: t.block_timestamp, confirmed: true });
+    const owner = c.parameter.value.owner_address;
+    out.push({ hash: t.txID, units: BigInt(c.parameter.value.amount ?? 0), time: t.block_timestamp, confirmed: true, from: owner ? tronBase58(owner) : undefined });
   }
   return out;
 }
@@ -132,7 +179,7 @@ async function ton(address: string, since: number): Promise<Incoming[]> {
   const body = (await getJson(url)) as { result?: { utime: number; transaction_id: { hash: string }; in_msg?: { source?: string; value?: string } }[] };
   return (body.result ?? [])
     .filter((t) => t.in_msg?.source && t.in_msg.value && t.utime * 1000 >= since)
-    .map((t) => ({ hash: t.transaction_id.hash, units: BigInt(t.in_msg!.value!), time: t.utime * 1000, confirmed: true }));
+    .map((t) => ({ hash: t.transaction_id.hash, units: BigInt(t.in_msg!.value!), time: t.utime * 1000, confirmed: true, from: tonRaw(t.in_msg!.source!) ?? undefined }));
 }
 
 async function rpc(method: string, params: unknown[]): Promise<unknown> {
@@ -164,7 +211,7 @@ async function bscUsdt(address: string, since: number): Promise<Incoming[]> {
   for (let from = first; from <= latest; from += 800) {
     const to = Math.min(from + 799, latest);
     const logs = (await rpc('eth_getLogs', [{ fromBlock: '0x' + from.toString(16), toBlock: '0x' + to.toString(16), address: USDT_BSC, topics: [TRANSFER_TOPIC, null, topic] }])) as {
-      transactionHash: string; blockNumber: string; data: string;
+      transactionHash: string; blockNumber: string; data: string; topics: string[];
     }[];
     for (const log of logs) {
       if (!times.has(log.blockNumber)) {
@@ -172,7 +219,7 @@ async function bscUsdt(address: string, since: number): Promise<Incoming[]> {
       }
       const time = times.get(log.blockNumber)!;
       if (time >= since) {
-        out.push({ hash: log.transactionHash, units: BigInt(log.data), time, confirmed: true });
+        out.push({ hash: log.transactionHash, units: BigInt(log.data), time, confirmed: true, from: '0x' + log.topics[1].slice(26).toLowerCase() });
       }
     }
   }
@@ -180,13 +227,15 @@ async function bscUsdt(address: string, since: number): Promise<Incoming[]> {
 }
 
 async function utxo(base: string, address: string, since: number): Promise<Incoming[]> {
-  const txs = (await getJson(`${base}/address/${address}/txs`)) as { txid: string; status: { confirmed: boolean; block_time?: number }; vout: { scriptpubkey_address?: string; value: number }[] }[];
+  const txs = (await getJson(`${base}/address/${address}/txs`)) as {
+    txid: string; status: { confirmed: boolean; block_time?: number }; vout: { scriptpubkey_address?: string; value: number }[]; vin?: { prevout?: { scriptpubkey_address?: string } }[];
+  }[];
   const out: Incoming[] = [];
   for (const tx of txs) {
     const units = tx.vout.filter((v) => v.scriptpubkey_address === address).reduce((sum, v) => sum + BigInt(v.value), 0n);
     const time = tx.status.confirmed && tx.status.block_time ? tx.status.block_time * 1000 : undefined;
     if (units > 0n && (time === undefined || time >= since)) {
-      out.push({ hash: tx.txid, units, time, confirmed: tx.status.confirmed });
+      out.push({ hash: tx.txid, units, time, confirmed: tx.status.confirmed, from: tx.vin?.[0]?.prevout?.scriptpubkey_address });
     }
   }
   return out;

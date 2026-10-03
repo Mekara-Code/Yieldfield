@@ -124,3 +124,35 @@ order (look again on the chain, credit by hand, cancel), and giving a player BLO
 Who a player plays (Diana or Arash) is chosen at sign-up and kept on the account; changing it at the
 title screen costs 500 BLOOM (taken through the farm's credits). Accounts from before the choice
 choose once, free.
+
+## Players' wallets (pay without an order, sign in with a wallet)
+
+A player can link their own wallets to their farm: in the game, the shop's MY WALLETS → CONNECT A
+WALLET (or SIGN IN WITH A WALLET on the sign-in form) makes a request and shows its link and short
+code; the player opens the link (`/wallet?code=…`) and signs a message with the wallet, and the game,
+which asks every few seconds, carries on. EVM wallets (MetaMask, Trust Wallet, OKX…) sign with
+`personal_sign`, TronLink with `signMessageV2`, TON wallets with a TON Connect `ton_proof`. On a phone
+MetaMask, Trust Wallet, OKX and TronLink sign only inside their own app's browser: the page has links
+that open it there. A TON wallet must have been used on-chain once (its public key is read from the
+chain).
+
+Linked wallets do two things:
+
+- **Deposits:** anything a linked wallet sends to the shop's wallet for a coin of its chain (BNB Chain:
+  USDT-BEP20; Tron: USDT-TRC20 and TRX; TON: TON) is that player's, without an order: any amount, at
+  the rate of the biggest pack it pays for. The server looks when the game loads or saves the farm,
+  while the shop's wallets page is open, and on CHECK FOR MY PAYMENT. Each transaction counts once.
+  Payments from an exchange can't be told apart (the sender is the exchange): those need an order.
+- **Sign-in:** a linked wallet signs the player in; a wallet that isn't linked can start a new farm
+  (a name and a character on the page; no password: such an account keeps at least one wallet).
+
+| | |
+|---|---|
+| `POST /api/wallet/requests` | `{ mode: "link" \| "login" }` (link: Bearer token) → `{ code, short, url, qr, expiresAt }` (15 minutes) |
+| `GET /api/wallet/requests/:code` | `{ status: pending \| done \| expired \| used, shortAddress }`; a done login request carries tokens, once |
+| `GET /api/wallet/challenge?code=` / `POST /api/wallet/verify` | for the /wallet page: the message to sign / the signature or proof |
+| `GET /api/wallet` | the player's wallets, the shop's addresses they can pay to, BLOOM per dollar |
+| `DELETE /api/wallet/:id` | unlinks one |
+| `POST /api/wallet/deposits` | looks for payments from the player's wallets now → `{ credited, credits }` |
+
+`TRONGRID_API_KEY` (optional) raises TronGrid's rate limit.

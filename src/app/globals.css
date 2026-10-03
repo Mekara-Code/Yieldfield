@@ -485,3 +485,50 @@ th {
 .status.cancelled {
   color: var(--red);
 }
+
+/* ---------------------------------------------------------------- wallet page */
+
+.wallet {
+  max-width: 520px;
+  margin: 40px auto 60px;
+}
+
+.wallet h1 {
+  margin: 4px 0 8px;
+  font-size: 28px;
+}
+
+.wallet .code-check {
+  margin: 14px 0 6px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--gold-soft);
+}
+
+.wallet-buttons .button {
+  margin-top: 12px;
+}
+
+.wallet .open-in {
+  margin: 16px 0 0;
+}
+
+.wallet .open-in a {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.wallet .done h2 {
+  color: var(--green);
+}
+
+.linkish {
+  border: 0;
+  background: none;
+  color: var(--gold);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
