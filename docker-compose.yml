@@ -30,6 +30,10 @@ services:
       NODE_ENV: production
       PORT: 3000
       HOST: 0.0.0.0
+      RELEASES_DIR: /data/releases
+    # Game versions put on this server from /admin/updates (served at /downloads/<file>).
+    volumes:
+      - releases:/data/releases
     ports:
       - "3000:3000"
 
@@ -44,4 +48,5 @@ services:
 
 volumes:
   pgdata:
+  releases:
   # caddy:

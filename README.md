@@ -315,3 +315,32 @@ they're in the game; it runs at them and bites.
   each 0.3 s), kept in the farm (`state.wolf`) through the event; at 0 the wolf is dead on that farm and
   the reward is given.
 - Health comes back by itself, 1% of the most a second from 10 s after the last bite.
+
+## App updates (/admin/updates)
+
+The game updates itself on Android. It asks `GET /api/app/latest?platform=android` when it starts and every ten
+minutes; a version with a bigger `versionCode` than the build (its Android Store Version) brings up an update
+window over the title or the farm. UPDATE NOW downloads inside the game, then hands the APK to Android's
+installer (the first time, Android asks the player to allow installs from the game). A version marked
+*must update* can't be put off.
+
+**Only what changed travels.** With a patch from the player's version (a `.yfd` file), the game downloads just
+the patch, and its update engine (`Source/MyProject/FarmDelta.cpp`) builds the new APK from the installed one:
+unchanged files are copied from it, the game's code and content are rebuilt from their old selves with zstd
+patches, and the result is checked byte for byte (SHA-1) before Android installs it. A copy of any other
+version (or a patch that doesn't fit) downloads the whole APK.
+
+Releasing a version:
+
+1. Build the APK with a bigger Store Version (`Config/DefaultEngine.ini`, `StoreVersion` and
+   `VersionDisplayName`), signed with the same key as before (an update only installs over the game then).
+2. Make the patch from the APK players have now (keep each published APK in `Build/Releases/<version>/`):
+   `python3 Scripts/make_update_delta.py Build/Releases/1.13/Yieldfield-1.13.apk Build/AndroidArchive/MyProject-arm64.apk`
+   (it writes `Build/Releases/<new>/Yieldfield-<old>-to-<new>.yfd` and checks it by applying it).
+3. On `/admin/updates` choose the APK (its version is read from it) and the patch file(s), write what's new,
+   pick where the files go, and publish. Withdraw a version there to stop offering it.
+
+Where the files are kept: **this server** (`RELEASES_DIR`, default `./releases`, a volume in docker-compose;
+served at `/downloads/<file>` with byte ranges) when it runs as its own server; **Vercel Blob** when a Blob
+store is connected to the Vercel project (`BLOB_READ_WRITE_TOKEN`; uploads go from the browser straight to
+Blob, in parts); or **a link** to the APK kept anywhere (no patches then).

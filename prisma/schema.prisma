@@ -280,3 +280,34 @@ model GameEvent {
 
   @@index([kind, startsAt])
 }
+
+/// A version of the game players can update to from inside it (/admin/updates): the newest one not
+/// withdrawn is offered to every copy older than it.
+model AppRelease {
+  id          String    @id @default(cuid())
+  /// "android" (the only one the game updates itself on, for now).
+  platform    String    @default("android")
+  /// The APK's versionCode (Project Settings > Android > Store Version): newer means bigger.
+  versionCode Int
+  /// What the players see: "1.13".
+  versionName String
+  /// "What's new", shown in the game's update window.
+  notes       String?
+  /// Where the file is downloaded from: an address of its own, or /downloads/<file> on this server.
+  url         String
+  /// Bytes, for the download's progress.
+  size        Int?
+  /// "link" (somewhere else), "blob" (Vercel Blob) or "disk" (this server's releases folder).
+  storage     String    @default("link")
+  /// Players must update before they can play on.
+  mandatory   Boolean   @default(false)
+  /// Patches to it from earlier versions (Scripts/make_update_delta.py), [{ from, url, size }]: a copy of
+  /// one of those versions downloads only what changed, else the whole APK.
+  deltas      Json      @default("[]")
+  createdBy   String
+  createdAt   DateTime  @default(now())
+  /// Taken back: no longer offered (the one before it is, if any).
+  withdrawnAt DateTime?
+
+  @@index([platform, versionCode])
+}

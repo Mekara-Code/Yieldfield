@@ -9,3 +9,6 @@ next-env.d.ts
 .env*.local
 .vercel
 .env*
+
+# Game versions kept by the server itself (/downloads)
+/releases/
