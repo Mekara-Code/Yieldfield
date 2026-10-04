@@ -304,6 +304,9 @@ model AppRelease {
   /// Patches to it from earlier versions (Scripts/make_update_delta.py), [{ from, url, size }]: a copy of
   /// one of those versions downloads only what changed, else the whole APK.
   deltas      Json      @default("[]")
+  /// Its content packs (on-demand looks and characters, cooked apart: Scripts/content_packs.py),
+  /// [{ chunk, files: [{ name, size, sha1, url }] }]: the game downloads each when it first needs it.
+  contentPacks Json     @default("[]")
   createdBy   String
   createdAt   DateTime  @default(now())
   /// Taken back: no longer offered (the one before it is, if any).

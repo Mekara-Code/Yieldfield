@@ -13,6 +13,16 @@ const Change = z.object({
   restore: z.boolean().optional(),
   mandatory: z.boolean().optional(),
   notes: z.string().trim().max(2000).optional(),
+  /** Replaces its content packs (a version published without them, or with new ones). */
+  contentPacks: z
+    .array(
+      z.object({
+        chunk: z.number().int().min(1),
+        files: z.array(z.object({ name: z.string().trim().min(1).max(200), size: z.number().int().min(0), sha1: z.string().regex(/^[0-9a-f]{40}$/), url: z.string().trim().min(1).max(2000) })).min(1).max(8),
+      }),
+    )
+    .max(2000)
+    .optional(),
 });
 
 /** Withdraws a version, brings it back, makes it a must, or changes what's new in it. */

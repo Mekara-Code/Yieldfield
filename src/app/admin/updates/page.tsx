@@ -22,12 +22,23 @@ interface Release {
   withdrawnAt: string | null;
   status: 'live' | 'older' | 'withdrawn';
   deltas: { from: number; url: string; size: number }[];
+  packs: number;
+  packBytes: number;
 }
 interface Patch {
   file: File;
   from: number;
   to: number;
 }
+
+/** The SHA-1 of a file, as hex (the game checks each pack file against it). */
+async function sha1Of(file: File) {
+  const digest = await crypto.subtle.digest('SHA-1', await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** A content pack's file: pakchunk<N>-<platform>.(pak|utoc|ucas). */
+const chunkOf = (name: string) => Number(/pakchunk(\d+)/i.exec(name)?.[1] ?? 0);
 
 /** A patch file's versions, from its header ("YFDELTA1", u32 from, u32 to): null if it isn't one. */
 async function readPatch(file: File): Promise<Patch | null> {
@@ -92,6 +103,7 @@ export default function UpdatesPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [patches, setPatches] = useState<Patch[]>([]);
   const [patchNote, setPatchNote] = useState<string | null>(null);
+  const [packFiles, setPackFiles] = useState<File[]>([]);
   const [progress, setProgress] = useState(0);
 
   const take = useCallback((d: UpdatesData) => {
@@ -151,7 +163,11 @@ export default function UpdatesPage() {
       setMessage(`The patch from code ${wrong.from} is to code ${wrong.to}, not to this version (code ${versionCode})`);
       return;
     }
-    if (patches.length && where === 'link') {
+    if (packFiles.some((f) => !chunkOf(f.name))) {
+      setMessage('Content packs are the pakchunk<N>-… files (.pak, .utoc, .ucas) the build makes');
+      return;
+    }
+    if ((patches.length || packFiles.length) && where === 'link') {
       setMessage('Patches are kept on this server or Vercel Blob: choose one of those, or publish without patches');
       return;
     }
@@ -190,6 +206,31 @@ export default function UpdatesPage() {
         });
         url = blob.url;
       }
+      // The content packs: each file checked (SHA-1) and put beside the version's (their names kept for the game).
+      const packs = new Map<number, { chunk: number; files: { name: string; size: number; sha1: string; url: string }[] }>();
+      for (let i = 0; i < packFiles.length; i++) {
+        const file = packFiles[i];
+        const chunk = chunkOf(file.name);
+        setBusy(`Content packs: ${i + 1} of ${packFiles.length} (${file.name})…`);
+        setProgress(i / packFiles.length);
+        const sha1 = await sha1Of(file);
+        let fileUrl: string;
+        if (where === 'disk') {
+          fileUrl = (await putOnServer(file, `c${versionCode}-${file.name}`, bearer, () => {})).url;
+        } else {
+          const blob = await upload(`content/${versionCode}/${file.name}`, file, {
+            access: 'public',
+            handleUploadUrl: '/api/admin/releases/upload',
+            headers: { Authorization: `Bearer ${bearer}` },
+            contentType: 'application/octet-stream',
+            multipart: file.size > 8 * 1048576,
+          });
+          fileUrl = blob.url;
+        }
+        const pack = packs.get(chunk) ?? { chunk, files: [] };
+        pack.files.push({ name: file.name, size: file.size, sha1, url: fileUrl });
+        packs.set(chunk, pack);
+      }
       // The patches from earlier versions, beside it.
       const deltas: { from: number; url: string; size: number }[] = [];
       for (const patch of patches) {
@@ -216,7 +257,7 @@ export default function UpdatesPage() {
       const { data: d, error } = await apiResult<UpdatesData>('/api/admin/releases', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ versionCode, versionName: versionName.trim(), notes: notes.trim() || undefined, url, size: size || undefined, storage: where, mandatory, deltas }),
+        body: JSON.stringify({ versionCode, versionName: versionName.trim(), notes: notes.trim() || undefined, url, size: size || undefined, storage: where, mandatory, deltas, contentPacks: [...packs.values()] }),
       });
       if (!d) {
         throw new Error(error ?? 'Publishing failed');
@@ -229,6 +270,7 @@ export default function UpdatesPage() {
       setLink('');
       setPatches([]);
       setPatchNote(null);
+      setPackFiles([]);
       setMessage(`Version ${versionName} is out: the game offers it to players from now on${deltas.length ? ` (copies of code ${deltas.map((d) => d.from).join(', ')} download only what changed)` : ''}`);
     } catch (e) {
       setMessage((e as Error).message);
@@ -311,6 +353,15 @@ export default function UpdatesPage() {
             <p className="muted small">
               {patchNote ??
                 'With a patch from the version a player has, the game downloads only what changed and builds the new version from the installed one; without one it downloads the whole APK.'}
+            </p>
+          </div>
+          <div className="wide-field">
+            <label htmlFor="up-packs">Content packs (all the pakchunk files of this build: Build/Releases/&lt;version&gt;/packs)</label>
+            <input id="up-packs" type="file" multiple accept=".pak,.utoc,.ucas" onChange={(e) => setPackFiles(Array.from(e.target.files ?? []))} />
+            <p className="muted small">
+              {packFiles.length
+                ? `${new Set(packFiles.map((f) => chunkOf(f.name))).size} packs in ${packFiles.length} files, ${megabytes(packFiles.reduce((s, f) => s + f.size, 0))}`
+                : 'The looks and characters the game downloads when a player first needs them (the APK is lighter without them).'}
             </p>
           </div>
           <div>
@@ -398,6 +449,11 @@ export default function UpdatesPage() {
                       <b>{r.versionName}</b> <span className="muted small">code {r.versionCode}</span>
                       <div className="muted small">{when(r.createdAt)}</div>
                       {r.notes && <div className="small" style={{ whiteSpace: 'pre-wrap', maxWidth: 360 }}>{r.notes}</div>}
+                      {r.packs > 0 && (
+                        <div className="muted small">
+                          content packs: {r.packs} ({megabytes(r.packBytes)})
+                        </div>
+                      )}
                       {r.deltas.length > 0 && (
                         <div className="muted small">
                           patches: {r.deltas.map((d) => `from ${d.from} (${megabytes(d.size)})`).join(', ')}

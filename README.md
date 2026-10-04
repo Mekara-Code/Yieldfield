@@ -337,8 +337,18 @@ Releasing a version:
 2. Make the patch from the APK players have now (keep each published APK in `Build/Releases/<version>/`):
    `python3 Scripts/make_update_delta.py Build/Releases/1.13/Yieldfield-1.13.apk Build/AndroidArchive/MyProject-arm64.apk`
    (it writes `Build/Releases/<new>/Yieldfield-<old>-to-<new>.yfd` and checks it by applying it).
-3. On `/admin/updates` choose the APK (its version is read from it) and the patch file(s), write what's new,
-   pick where the files go, and publish. Withdraw a version there to stop offering it.
+3. Copy the build's content packs (`Saved/StagedBuilds/Android_ASTC/MyProject/Content/Paks/pakchunk[1-9]*`)
+   to `Build/Releases/<new>/packs/`.
+4. On `/admin/updates` choose the APK (its version is read from it), the patch file(s) and all the content
+   pack files, write what's new, pick where the files go, and publish. Withdraw a version there to stop
+   offering it.
+
+**Content on demand.** The optional looks and characters (each outfit, hairstyle and eye style, Arellah's and
+Arash's bodies) aren't in the APK: `Scripts/content_packs.py` gives each its own pakchunk (Diana's first looks
+stay in), and the game downloads a pack when a player first needs it, keeping it on the device. It asks
+`GET /api/app/content?platform=android&code=<its version>` for that version's pack files (each checked by
+SHA-1 before it's mounted). While one downloads, the character keeps its first look (or stands in as clay
+when its body is what's missing) and the wardrobe's card shows a skeleton with the download's progress.
 
 Where the files are kept: **this server** (`RELEASES_DIR`, default `./releases`, a volume in docker-compose;
 served at `/downloads/<file>` with byte ranges) when it runs as its own server; **Vercel Blob** when a Blob

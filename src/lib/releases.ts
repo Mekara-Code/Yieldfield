@@ -29,10 +29,30 @@ export function storageOptions() {
   return { blob: Boolean(process.env.BLOB_READ_WRITE_TOKEN), disk: !process.env.VERCEL };
 }
 
-/** A file name that's safe on disk and in a URL: "Yieldfield-1.13.apk", "Yieldfield-12-to-13.yfd" (an APK or a patch). */
+/** A file name that's safe on disk and in a URL: "Yieldfield-1.13.apk", "Yieldfield-12-to-13.yfd", "c14-pakchunk100-Android_ASTC.pak"
+ *  (an APK, a patch or a content pack's file). */
 export function safeFileName(name: string) {
   const base = path.basename(name).replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
-  return /\.(apk|yfd)$/i.test(base) ? base : `${base || 'yieldfield'}.apk`;
+  return /\.(apk|yfd|pak|utoc|ucas)$/i.test(base) ? base : `${base || 'yieldfield'}.apk`;
+}
+
+/** One of a version's content packs: its pakchunk's files (.pak, .utoc, .ucas). */
+export interface ContentPack {
+  chunk: number;
+  files: { name: string; size: number; sha1: string; url: string }[];
+}
+
+export function packsOf(value: unknown): ContentPack[] {
+  return Array.isArray(value)
+    ? value
+        .filter((p) => p && typeof p.chunk === 'number' && Array.isArray(p.files))
+        .map((p) => ({
+          chunk: p.chunk,
+          files: p.files
+            .filter((f: { name?: unknown; url?: unknown }) => typeof f?.name === 'string' && typeof f?.url === 'string')
+            .map((f: { name: string; size: unknown; sha1: unknown; url: string }) => ({ name: f.name, size: Number(f.size) || 0, sha1: String(f.sha1 ?? ''), url: f.url })),
+        }))
+    : [];
 }
 
 function deltasOf(value: unknown): ReleaseDelta[] {
@@ -61,6 +81,12 @@ export async function latestRelease(platform = 'android') {
   return prisma.appRelease.findFirst({ where: { platform, withdrawnAt: null }, orderBy: [{ versionCode: 'desc' }, { createdAt: 'desc' }] });
 }
 
+/** A version's content packs (for the game of that version, so its packs match it), or null if it isn't published. */
+export async function releasePacks(versionCode: number, platform = 'android') {
+  const row = await prisma.appRelease.findFirst({ where: { platform, versionCode }, orderBy: { createdAt: 'desc' } });
+  return row ? packsOf(row.contentPacks) : null;
+}
+
 export async function listReleases(platform = 'android') {
   const rows = await prisma.appRelease.findMany({ where: { platform }, orderBy: [{ versionCode: 'desc' }, { createdAt: 'desc' }], take: 50 });
   const live = rows.find((r) => !r.withdrawnAt);
@@ -72,6 +98,8 @@ export async function listReleases(platform = 'android') {
     createdAt: r.createdAt.toISOString(),
     withdrawnAt: r.withdrawnAt?.toISOString() ?? null,
     status: r.withdrawnAt ? 'withdrawn' : r.id === live?.id ? 'live' : 'older',
+    packs: packsOf(r.contentPacks).length,
+    packBytes: packsOf(r.contentPacks).reduce((sum, p) => sum + p.files.reduce((s, f) => s + f.size, 0), 0),
   }));
 }
 
@@ -84,13 +112,16 @@ export async function createRelease(input: {
   storage: ReleaseStorage;
   mandatory: boolean;
   deltas?: ReleaseDelta[];
+  contentPacks?: ContentPack[];
   createdBy: string;
   platform?: string;
 }) {
-  return prisma.appRelease.create({ data: { ...input, deltas: (input.deltas ?? []) as object[], platform: input.platform ?? 'android', notes: input.notes || null } });
+  return prisma.appRelease.create({
+    data: { ...input, deltas: (input.deltas ?? []) as object[], contentPacks: (input.contentPacks ?? []) as object[], platform: input.platform ?? 'android', notes: input.notes || null },
+  });
 }
 
-export async function updateRelease(id: string, change: { withdraw?: boolean; restore?: boolean; mandatory?: boolean; notes?: string }) {
+export async function updateRelease(id: string, change: { withdraw?: boolean; restore?: boolean; mandatory?: boolean; notes?: string; contentPacks?: ContentPack[] }) {
   const row = await prisma.appRelease.findUnique({ where: { id } });
   if (!row) {
     return null;
@@ -100,5 +131,6 @@ export async function updateRelease(id: string, change: { withdraw?: boolean; re
   if (change.restore) data.withdrawnAt = null;
   if (change.mandatory !== undefined) data.mandatory = change.mandatory;
   if (change.notes !== undefined) data.notes = change.notes || null;
+  if (change.contentPacks !== undefined) data.contentPacks = change.contentPacks as object[];
   return prisma.appRelease.update({ where: { id }, data });
 }

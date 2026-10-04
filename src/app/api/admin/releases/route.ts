@@ -32,6 +32,16 @@ const NewRelease = z.object({
     .array(z.object({ from: z.number().int().min(1), url: z.string().trim().min(1).max(2000), size: z.number().int().min(1).max(2_147_000_000) }))
     .max(10)
     .default([]),
+  /** Its content packs (each pakchunk's files, put here or on Blob first). */
+  contentPacks: z
+    .array(
+      z.object({
+        chunk: z.number().int().min(1),
+        files: z.array(z.object({ name: z.string().trim().min(1).max(200), size: z.number().int().min(0), sha1: z.string().regex(/^[0-9a-f]{40}$/), url: z.string().trim().min(1).max(2000) })).min(1).max(8),
+      }),
+    )
+    .max(2000)
+    .default([]),
 });
 
 /** Publishes a version: from now on the game offers it to every copy with a smaller versionCode. */
