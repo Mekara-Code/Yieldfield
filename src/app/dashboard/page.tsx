@@ -44,6 +44,11 @@ interface FarmState {
   skillResetAt?: number;
   skillPointsFree?: number;
   combatPower?: number;
+  health?: number;
+  maxHealth?: number;
+  deadUntil?: number;
+  deathCause?: string;
+  wolfEvent?: { id: string; power: number; health: number; left: number; endsAt: number; killed: boolean } | null;
 }
 interface Wallet {
   coins: number;
@@ -56,7 +61,7 @@ interface Defs {
   buildings: { id: string; name: string }[];
   maxEnergy: number;
   skills?: { id: string; name: string; about: string }[];
-  skillTracks?: { id: string; skill: string; part: 'power' | 'time' | 'yield'; max: number; step: number }[];
+  skillTracks?: { id: string; skill: string; part: 'power' | 'health' | 'time' | 'yield'; max: number; step: number }[];
   skillResetSeconds?: number;
 }
 interface FarmEvent {
@@ -191,6 +196,14 @@ function describe(e: FarmEvent) {
       return `Changed character to ${d.to} (${d.cost} ${MONEY})`;
     case 'admin_adjust':
       return `The admins changed your standing${d.vipDays ? ` (VIP ${Number(d.vipDays) > 0 ? '+' : ''}${d.vipDays} days)` : ''}${d.reputation ? ` (reputation ${Number(d.reputation) > 0 ? '+' : ''}${d.reputation})` : ''}`;
+    case 'killed':
+      return `Killed by the ${d.by}: down for 24 hours`;
+    case 'wolf_killed':
+      return `Killed the wolf! (+${d.xp} XP, +${d.coins} coins)`;
+    case 'revive':
+      return `Came back at once (${d.gems} gems)`;
+    case 'respawn':
+      return 'Back on their feet';
     case 'gift':
       return `A gift from ${d.by}: ${d.gems ? `${d.gems} gems` : `${d.bloom ?? d.amount} ${MONEY}`}`;
     default:
@@ -382,6 +395,8 @@ export default function Dashboard() {
         </button>
       </div>
 
+      {state && <WolfBanner state={state} now={t} />}
+
       {!state ? (
         <div className="grid">
           <div className="card">
@@ -571,4 +586,61 @@ export default function Dashboard() {
       )}
     </>
   );
+}
+
+function until(seconds: number) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m ${Math.max(0, Math.floor(seconds % 60))}s`;
+}
+
+/** The wolf event and what it did to this farmer: killed (and when they're back), or the wolf on their farm. */
+function WolfBanner({ state, now }: { state: FarmState; now: number }) {
+  const [next, setNext] = useState<{ startsAt: number } | null>(null);
+  useEffect(() => {
+    fetch('/api/events')
+      .then((r) => r.json())
+      .then((d: { next: { startsAt: number } | null }) => setNext(d.next))
+      .catch(() => setNext(null));
+  }, []);
+  const wolf = state.wolfEvent;
+  if ((state.deadUntil ?? 0) > now) {
+    return (
+      <div className="wolf-banner dead" style={{ marginBottom: 18 }}>
+        <strong>You were killed by the {state.deathCause || 'wolf'}</strong>
+        <span>
+          Back on your feet {new Date(state.deadUntil! * 1000).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })} (in {until(state.deadUntil! - now)})
+        </span>
+        <span className="muted small">or come back at once for gems, in the game</span>
+      </div>
+    );
+  }
+  if (wolf) {
+    return (
+      <div className="wolf-banner" style={{ marginBottom: 18 }}>
+        <strong>{wolf.killed ? 'You killed the wolf on your farm' : 'A wolf is loose on the farms'}</strong>
+        {!wolf.killed && (
+          <span>
+            It goes for you as soon as you are in the game · its health {wolf.left.toLocaleString()} / {wolf.health.toLocaleString()} · its bite {wolf.power}
+          </span>
+        )}
+        <span className="muted small">
+          your health {state.health ?? state.maxHealth} / {state.maxHealth} · power {state.combatPower} · until{' '}
+          {new Date(wolf.endsAt * 1000).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })}
+        </span>
+      </div>
+    );
+  }
+  if (next) {
+    return (
+      <div className="wolf-banner" style={{ marginBottom: 18 }}>
+        <strong>The wolf is coming</strong>
+        <span>
+          {new Date(next.startsAt * 1000).toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}: put points into combat (power and
+          health) before then
+        </span>
+      </div>
+    );
+  }
+  return null;
 }

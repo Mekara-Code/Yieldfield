@@ -26,6 +26,8 @@ const ActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('skill_reset') }),
   z.object({ type: z.literal('market_list'), item: z.string().max(32).optional(), animal: Id.optional(), count: z.number().int().min(1).max(999).optional(), price: z.number().int().min(1).max(10_000_000) }),
   z.object({ type: z.enum(['market_cancel', 'market_buy']), listing: z.string().regex(/^[a-z0-9]{10,40}$/) }),
+  z.object({ type: z.enum(['wolf_hit', 'wolf_bite']), event: z.string().regex(/^[a-z0-9]{10,40}$/) }),
+  z.object({ type: z.literal('revive') }),
 ]);
 
 const Body = z.object({ id: z.string().regex(/^[A-Za-z0-9-]{8,64}$/), action: ActionSchema });
@@ -44,7 +46,7 @@ export async function POST(request: Request) {
     return body.response;
   }
   const result = await performAction(claims.userId, body.data.id, body.data.action);
-  if (result.status === 200 && body.data.action.type !== 'clock') {
+  if (result.status === 200 && body.data.action.type !== 'clock' && body.data.action.type !== 'wolf_hit') {
     hub.toUser(claims.userId, { type: 'farm:update', revision: result.body.revision, state: result.body.state, wallet: result.body.wallet, now: result.body.now }, 'web');
   }
   return json(result.body, result.status);

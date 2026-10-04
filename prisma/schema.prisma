@@ -258,3 +258,23 @@ model Listing {
   @@index([sellerId, status])
   @@index([buyerId])
 }
+
+/// Something an admin sets to happen on every farm for a while (/admin/events, src/lib/events.ts): kind "wolf",
+/// a wolf loose on the farms, going for each farmer as soon as they're in the game.
+model GameEvent {
+  id          String    @id @default(cuid())
+  kind        String
+  startsAt    DateTime
+  endsAt      DateTime
+  /// The wolf's power (health a bite takes off a farmer) and its health on each farm.
+  power       Int
+  health      Int
+  note        String?
+  /// The admin who set it.
+  createdBy   String
+  createdAt   DateTime  @default(now())
+  /// Called off (or ended early: then endsAt is moved instead).
+  cancelledAt DateTime?
+
+  @@index([kind, startsAt])
+}

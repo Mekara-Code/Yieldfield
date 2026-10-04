@@ -229,6 +229,9 @@ export default function AdminPage() {
     <div className="admin">
       <div className="row-head">
         <h1>Shop admin</h1>
+        <Link className="pill" href="/admin/events">
+          Events: the wolf →
+        </Link>
         {totals && (
           <span className="pill">
             {totals.paidOrders} paid · ${totals.usd} · {totals.bloom.toLocaleString()} BLOOM · {totals.gems.toLocaleString()} gems · {totals.fromLinkedWallets} from linked wallets

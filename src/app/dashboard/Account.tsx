@@ -30,7 +30,7 @@ export interface MeAccount {
 
 interface SkillDefs {
   skills: { id: string; name: string; about: string }[];
-  skillTracks: { id: string; skill: string; part: 'power' | 'time' | 'yield'; max: number; step: number }[];
+  skillTracks: { id: string; skill: string; part: 'power' | 'health' | 'time' | 'yield'; max: number; step: number }[];
   skillResetSeconds: number;
 }
 
@@ -180,9 +180,11 @@ export function SkillsCard({ skills, free, power, resetAt, defs, now }: { skills
                 const level = skills[t.id] ?? 0;
                 return (
                   <div className="track" key={t.id} title={skill.about}>
-                    <span className="muted small">{t.part === 'power' ? `level ${level}` : t.part}</span>
-                    {t.part === 'power' ? (
-                      <span className="small">+{level * t.step} power</span>
+                    <span className="muted small">{t.part === 'power' ? `level ${level}` : t.part === 'health' ? `health ${level}` : t.part}</span>
+                    {t.part === 'power' || t.part === 'health' ? (
+                      <span className="small">
+                        +{level * t.step} {t.part}
+                      </span>
                     ) : (
                       <>
                         <span className="pips">

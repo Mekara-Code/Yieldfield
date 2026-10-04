@@ -66,8 +66,26 @@ export interface Farm {
   skillCarry: Record<string, number>;
   /** Sales on the market up to then (milliseconds) were told already. */
   marketSeenAt: number;
+  /** Health as it was at hurtAt (null: all of it); it comes back by itself (rules.ts healthNow). */
+  health: number | null;
+  hurtAt: number;
+  /** Killed: back on their feet at deadUntil (0: alive), and what killed them ("wolf"). */
+  deadUntil: number;
+  deathCause: string;
+  deaths: number;
+  /** This farm's wolf in the wolf event on now (or the last one): the damage it took, when it died (0: alive),
+   *  and the last strike at it and bite from it (milliseconds, for the rate checks). */
+  wolf: FarmWolf | null;
   /** The latest actions' ids: one sent again (its answer lost) isn't done twice. */
   recent: string[];
+}
+
+export interface FarmWolf {
+  event: string;
+  damage: number;
+  killedAt: number;
+  hitMs: number;
+  biteMs: number;
 }
 
 /** What farms made before a field existed lack: added (a farm read from the database goes through it). */
@@ -77,6 +95,12 @@ export function withDefaults(farm: Farm): Farm {
   farm.skillResetAt ??= 0;
   farm.skillCarry ??= {};
   farm.marketSeenAt ??= 0;
+  farm.health ??= null;
+  farm.hurtAt ??= 0;
+  farm.deadUntil ??= 0;
+  farm.deathCause ??= '';
+  farm.deaths ??= 0;
+  farm.wolf ??= null;
   farm.recent ??= [];
   return farm;
 }
@@ -113,6 +137,12 @@ export function newFarm(plotIndices: number[], starter: number): Farm {
     skillResetAt: 0,
     skillCarry: {},
     marketSeenAt: 0,
+    health: null,
+    hurtAt: 0,
+    deadUntil: 0,
+    deathCause: '',
+    deaths: 0,
+    wolf: null,
     recent: [],
   };
 }
@@ -275,6 +305,12 @@ export function migrate(old: Record<string, unknown>, now: number): Farm {
     skillResetAt: 0,
     skillCarry: {},
     marketSeenAt: 0,
+    health: null,
+    hurtAt: 0,
+    deadUntil: 0,
+    deathCause: '',
+    deaths: 0,
+    wolf: null,
     recent: [],
   };
 }

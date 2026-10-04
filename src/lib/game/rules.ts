@@ -33,6 +33,14 @@ import {
   skillPoints,
   type AnimalKind,
   type SkillId,
+  BASE_HEALTH,
+  BASE_POWER,
+  HEALTH_REGEN,
+  HEALTH_STEP,
+  RESPAWN_SECONDS,
+  WOLF_BITE_SECONDS,
+  WOLF_HIT_SECONDS,
+  type WolfSettings,
 } from './defs';
 import { feed, growNeed, growth, isDry, isRipe, newAnimal, productReady, remaining, woolReady, type Animal, type Farm, type Plot } from './state';
 import type { Task } from '../tasks';
@@ -62,7 +70,18 @@ export type Action =
   | { type: 'skill'; track: string }
   | { type: 'skill_reset' }
   | { type: 'market_list'; item?: string; animal?: string; count?: number; price: number }
-  | { type: 'market_cancel' | 'market_buy'; listing: string };
+  | { type: 'market_cancel' | 'market_buy'; listing: string }
+  | { type: 'wolf_hit' | 'wolf_bite'; event: string }
+  | { type: 'revive' };
+
+/** The wolf event on now (src/lib/events.ts), as an action reads it: times in Unix seconds. */
+export interface WolfEventCtx {
+  id: string;
+  power: number;
+  health: number;
+  startsAt: number;
+  endsAt: number;
+}
 
 /** A listing as the engine reads it for an action (src/lib/market.ts). */
 export interface MarketListing {
@@ -111,6 +130,11 @@ export interface Ctx {
   /** The player's listings that ran out (given back now). */
   expired?: MarketListing[];
   market?: MarketCtx;
+  /** The server's clock in milliseconds (the wolf fight's rate checks). */
+  nowMs?: number;
+  /** The wolf event on now, if any, and the admins' wolf settings (the revive price, the reward). */
+  wolfEvent?: WolfEventCtx | null;
+  wolfSettings?: WolfSettings;
 }
 
 export interface Signal {
@@ -314,9 +338,53 @@ export function skillPointsFree(farm: Farm) {
   return skillPoints(levelForXp(farm.xp)) - spent;
 }
 
+/** Combat power: everyone's base and the combat track's levels (what a strike takes off the wolf). */
 export function combatPower(farm: Farm) {
   const track = findTrack('combat')!;
-  return trackLevel(farm, track.id) * track.step;
+  return BASE_POWER + trackLevel(farm, track.id) * track.step;
+}
+
+/** The most health a farmer has: the base and the combat health track's levels. */
+export function maxHealth(farm: Farm) {
+  return BASE_HEALTH + trackLevel(farm, 'combat.health') * HEALTH_STEP;
+}
+
+/** Health now: what was left at the last wound, coming back by itself after a while; 0 while dead. */
+export function healthNow(farm: Farm, now: number) {
+  if (farm.deadUntil > now) {
+    return 0;
+  }
+  const max = maxHealth(farm);
+  if (farm.health === null || farm.health === undefined) {
+    return max;
+  }
+  const back = Math.max(0, now - farm.hurtAt - HEALTH_REGEN.after) * HEALTH_REGEN.perSecond * max;
+  return Math.min(max, Math.round(farm.health + back));
+}
+
+/** The wolf of the event on now as this farm has it: health left (0: killed) and the event. */
+export function wolfOf(farm: Farm, event: WolfEventCtx | null | undefined) {
+  if (!event) {
+    return null;
+  }
+  const mine = farm.wolf?.event === event.id ? farm.wolf : null;
+  const left = Math.max(0, event.health - (mine?.damage ?? 0));
+  return { id: event.id, power: event.power, health: event.health, left, endsAt: event.endsAt, killed: !!mine?.killedAt || left <= 0 };
+}
+
+/** The wolf a strike or bite is about: the event on now (the one the game means), alive on this farm. */
+function liveWolf(farm: Farm, ctx: Ctx, id: string) {
+  const e = ctx.wolfEvent;
+  if (!e || e.id !== id) {
+    refuse('The wolf is gone');
+  }
+  if (!farm.wolf || farm.wolf.event !== e.id) {
+    farm.wolf = { event: e.id, damage: 0, killedAt: 0, hitMs: 0, biteMs: 0 };
+  }
+  if (farm.wolf.killedAt || farm.wolf.damage >= e.health) {
+    refuse('The wolf is dead already');
+  }
+  return { e, wolf: farm.wolf };
 }
 
 const cycleOf = (farm: Farm, kind: AnimalKind, seconds: number) => Math.round(seconds * timeFactor(farm, ANIMAL_SKILL[kind]));
@@ -346,8 +414,18 @@ function roomFor(farm: Farm, kind: AnimalKind) {
   }
 }
 
-/** Buildings finished and listings run out since the last action: done now. */
+/** Buildings finished and listings run out since the last action: done now. So is coming back from the dead. */
 function settle(farm: Farm, ctx: Ctx, out: Outcome) {
+  if (farm.deadUntil && farm.deadUntil <= ctx.now) {
+    farm.deadUntil = 0;
+    farm.health = null;
+    farm.hurtAt = ctx.now;
+    out.notices.push('You\'re back on your feet');
+    out.events.push({ kind: 'respawn', data: { cause: farm.deathCause } });
+  }
+  if (farm.health !== null && farm.health !== undefined && healthNow(farm, ctx.now) >= maxHealth(farm)) {
+    farm.health = null;
+  }
   for (const [id, readyAt] of Object.entries(farm.construction)) {
     if (readyAt <= ctx.now) {
       delete farm.construction[id];
@@ -417,9 +495,15 @@ function sellValue(id: string, count: number, bonusPercent = 0) {
   return info ? Math.round((info.sell * count * (100 + bonusPercent)) / 100) : 0;
 }
 
+/** What a farmer the wolf killed may still do: keep the clock, buy gems, and come back for gems. */
+const WHILE_DEAD = new Set(['clock', 'buy_gems', 'revive']);
+
 function run(farm: Farm, action: Action, ctx: Ctx, out: Outcome) {
   const now = ctx.now;
   settle(farm, ctx, out);
+  if (farm.deadUntil > now && !WHILE_DEAD.has(action.type)) {
+    refuse(`You were killed by the ${farm.deathCause || 'wolf'}: you're back in ${duration(farm.deadUntil - now)}`);
+  }
   switch (action.type) {
     case 'clock': {
       farm.hour = Math.min(Math.max(action.hour, 0), 30);
@@ -869,7 +953,14 @@ function run(farm: Farm, action: Action, ctx: Ctx, out: Outcome) {
         refuse('No skill points left: every level gives one');
       }
       farm.skills[track.id] = level + 1;
-      const what = track.part === 'power' ? `combat power ${combatPower(farm)}` : track.part === 'time' ? `${track.step * (level + 1)}% less time` : `${track.step * (level + 1)}% more`;
+      const what =
+        track.part === 'power'
+          ? `combat power ${combatPower(farm)}`
+          : track.part === 'health'
+            ? `health ${maxHealth(farm)}`
+            : track.part === 'time'
+              ? `${track.step * (level + 1)}% less time`
+              : `${track.step * (level + 1)}% more`;
       const skillName = SKILLS.find((k) => k.id === track.skill)?.name ?? track.skill;
       out.notices.push(`${skillName} ${track.part === 'power' ? '' : track.part + ' '}level ${level + 1}: ${what}`);
       out.events.push({ kind: 'skill', data: { track: track.id, level: level + 1 } });
@@ -983,6 +1074,67 @@ function run(farm: Farm, action: Action, ctx: Ctx, out: Outcome) {
       out.notices.push(`Bought ${describeListing(l)} from ${l.sellerName} for ${l.price} BLOOM`);
       out.events.push({ kind: 'market_buy', data: { item: l.item, count: l.count, price: l.price, from: l.sellerName } });
       out.result.listing = l.id;
+      return;
+    }
+    case 'wolf_hit': {
+      const { e, wolf } = liveWolf(farm, ctx, action.event);
+      const ms = ctx.nowMs ?? now * 1000;
+      if (ms - wolf.hitMs < WOLF_HIT_SECONDS * 1000) {
+        out.result = { ignored: true, wolfHealth: e.health - wolf.damage };
+        return;   // faster than anyone strikes: not counted
+      }
+      wolf.hitMs = ms;
+      const power = combatPower(farm);
+      wolf.damage = Math.min(e.health, wolf.damage + power);
+      out.result = { damage: power, wolfHealth: e.health - wolf.damage };
+      if (wolf.damage >= e.health) {
+        wolf.killedAt = now;
+        const reward = ctx.wolfSettings ?? { rewardXp: 0, rewardCoins: 0 };
+        addXp(farm, reward.rewardXp, out);
+        farm.coins += reward.rewardCoins;
+        out.notices.push(`You killed the wolf!  +${reward.rewardXp} XP  ·  +${reward.rewardCoins} coins`);
+        out.events.push({ kind: 'wolf_killed', data: { event: e.id, xp: reward.rewardXp, coins: reward.rewardCoins } });
+        out.result.wolfKilled = true;
+      }
+      return;
+    }
+    case 'wolf_bite': {
+      const { e, wolf } = liveWolf(farm, ctx, action.event);
+      const ms = ctx.nowMs ?? now * 1000;
+      if (ms - wolf.biteMs < WOLF_BITE_SECONDS * 1000) {
+        out.result = { ignored: true, health: healthNow(farm, now) };
+        return;
+      }
+      wolf.biteMs = ms;
+      const left = healthNow(farm, now) - e.power;
+      farm.hurtAt = now;
+      if (left <= 0) {
+        farm.health = null;
+        farm.deadUntil = now + RESPAWN_SECONDS;
+        farm.deathCause = 'wolf';
+        farm.deaths += 1;
+        out.notices.push('You were killed by the wolf');
+        out.events.push({ kind: 'killed', data: { by: 'wolf', event: e.id } });
+        out.result = { health: 0, killed: true, deadUntil: farm.deadUntil };
+      } else {
+        farm.health = left;
+        out.result = { health: left, damage: e.power };
+      }
+      return;
+    }
+    case 'revive': {
+      if (!(farm.deadUntil > now)) {
+        refuse('You\'re alive');
+      }
+      const price = ctx.wolfSettings?.reviveGems ?? 0;
+      if (price > 0) {
+        spendGems(ctx, out, price, 'Coming back at once');
+      }
+      farm.deadUntil = 0;
+      farm.health = null;
+      farm.hurtAt = now;
+      out.notices.push(`Back on your feet  ·  -${price} gems`);
+      out.events.push({ kind: 'revive', data: { gems: price } });
       return;
     }
   }

@@ -89,6 +89,8 @@ the `caddy` service in `docker-compose.yml`, and set the game's `ServerUrl` to `
 | `PUT /api/farm` | 410: games from before 1.5 can't save any more |
 | `GET /api/farm/events` / `POST` | the activity feed / `{ kind, day, data }` |
 | `GET /api/leaderboard` | the richest farms |
+| `GET /api/events` | `{ wolf, next, now }`: the wolf event on now and the next one (times in Unix seconds) |
+| `GET/POST/PUT /api/admin/events`, `PATCH /api/admin/events/{id}` | admins: the wolf events and settings (below) |
 | `GET /api/health` | `{ ok, database, realtime, online }`: `realtime` false means no WebSocket (Vercel) |
 
 The game gets its refresh token in the body; the site gets it as an http-only cookie. A refresh token
@@ -237,7 +239,9 @@ withdrawals. Plans (days, BLOOM) are set in /admin.
 
 Every player level gives a skill point (src/lib/game/defs.ts `SKILL_TRACKS`, the `skill` action):
 
-- **Combat**: +100 combat power a level (shown on the player's name and in the game's skills, K).
+- **Combat**: a *power* track (+100 combat power a level, on top of everyone's 100; shown on the
+  player's name and in the game's skills, K) and a *health* track (+50 health a level, on top of
+  everyone's 1000).
 - **Farming**, **Cattle** (cows), **Sheep**, **Poultry** (hens): a *time* track (5% off their timers a
   level: a crop's growing, an animal's milk, wool or eggs) and a *yield* track (5% more a level, the
   fractions kept till they make a whole one), six levels each.
@@ -288,3 +292,26 @@ player's linked wallet credits the pack of their open order even if the amount i
 (97–110% of it), and otherwise becomes BLOOM at the packs' rate. Each is a `Payment` (the admin's
 Transactions list, marked "linked wallet") and a line in the player's history (the game's shop:
 HISTORY, and the site's dashboard).
+
+## Wolf events (/admin/events)
+
+An admin lets a black wolf loose on every farm on the days they choose: **/admin/events** (linked from
+/admin) sets an event's day, start time and hours (or "Release it now"), and its wolf's power and health
+(from the wolf settings: power 500, health 5000 by default; changeable for an event that's on, on every
+farm at once), and lists every event with how many farmers the wolf killed and how many wolves died.
+The wolf settings also set the gems to come back at once (300) and the reward for killing it (300 XP,
+300 coins). Events are the `GameEvent` table; settings the `wolf` Setting.
+
+While an event is on (src/lib/events.ts, read with every action and kept 5 s), the farm the game is sent
+carries `wolfEvent` (`{ id, power, health, left, endsAt, killed }`, this farm's wolf) and the farmer's
+`health`, `maxHealth`, `deadUntil` and `deathCause`. The game puts the wolf down near the farmer as soon as
+they're in the game; it runs at them and bites.
+
+- `wolf_bite { event }`: the wolf's power off the farmer's health (no more than one a second). At 0 they
+  are dead for 24 hours (`deadUntil`); every action but `clock`, `buy_gems` and `revive` is refused
+  till then, and the game shows "You were killed by the wolf" and the time they're back each time it
+  starts. `revive` brings them back at once for the gems.
+- `wolf_hit { event }`: the farmer's combat power off the wolf's health on their farm (no more than one
+  each 0.3 s), kept in the farm (`state.wolf`) through the event; at 0 the wolf is dead on that farm and
+  the reward is given.
+- Health comes back by itself, 1% of the most a second from 10 s after the last bite.

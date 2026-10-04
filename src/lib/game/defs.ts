@@ -104,9 +104,9 @@ export type SkillId = 'combat' | 'farming' | 'building' | 'cows' | 'sheep' | 'he
 export interface SkillTrack {
   id: string;
   skill: SkillId;
-  part: 'power' | 'time' | 'yield';
+  part: 'power' | 'health' | 'time' | 'yield';
   max: number;
-  /** Percent a level (power: combat power a level). */
+  /** Percent a level (power: combat power a level; health: health a level). */
   step: number;
 }
 
@@ -117,7 +117,7 @@ export interface SkillDef {
 }
 
 export const SKILLS: SkillDef[] = [
-  { id: 'combat', name: 'Combat', about: 'Each level: +100 combat power' },
+  { id: 'combat', name: 'Combat', about: 'Each level: +100 combat power, or +50 health' },
   { id: 'farming', name: 'Farming', about: 'Crops: they grow faster, and give more' },
   { id: 'building', name: 'Building', about: 'Buildings go up faster' },
   { id: 'cows', name: 'Cattle', about: 'Cows: milk sooner, and more of it' },
@@ -126,8 +126,11 @@ export const SKILLS: SkillDef[] = [
 ];
 
 export const COMBAT_POWER = 100;
+/** Health a level of combat's health track adds. */
+export const HEALTH_STEP = 50;
 export const SKILL_TRACKS: SkillTrack[] = [
   { id: 'combat', skill: 'combat', part: 'power', max: 99, step: COMBAT_POWER },
+  { id: 'combat.health', skill: 'combat', part: 'health', max: 99, step: HEALTH_STEP },
   { id: 'farming.time', skill: 'farming', part: 'time', max: 6, step: 5 },
   { id: 'farming.yield', skill: 'farming', part: 'yield', max: 6, step: 5 },
   { id: 'building.time', skill: 'building', part: 'time', max: 6, step: 10 },
@@ -148,6 +151,34 @@ export function skillPoints(level: number) {
 
 export const findTrack = (id: string) => SKILL_TRACKS.find((t) => t.id === id);
 export const ANIMAL_SKILL: Record<AnimalKind, SkillId> = { Chicken: 'hens', Sheep: 'sheep', Cow: 'cows' };
+
+// ----------------------------------------------------------------------------- health and the wolf
+
+/**
+ * Every farmer has health: BASE_HEALTH, and HEALTH_STEP more for each level of combat's health track. It
+ * comes back by itself (HEALTH_REGEN). On days an admin sets (the Event table, /admin/events) a wolf is
+ * loose on every farm: it goes for the farmer as soon as they're in the game. Its bites take its power off
+ * their health; their strikes take their combat power (BASE_POWER and the combat track) off its health,
+ * which the server keeps for each farm through the event. A farmer it kills is down for RESPAWN_SECONDS
+ * (or back at once for the admins' revive price in gems).
+ */
+export const BASE_HEALTH = 1000;
+export const BASE_POWER = 100;
+/** Health back a second (a part of the most), from this many seconds after the last wound. */
+export const HEALTH_REGEN = { perSecond: 0.01, after: 10 };
+export const RESPAWN_SECONDS = 24 * 3600;
+/** The quickest the wolf bites again, and a farmer strikes again (seconds): a game sending more is cheating. */
+export const WOLF_BITE_SECONDS = 1.0;
+export const WOLF_HIT_SECONDS = 0.3;
+/** The admins' wolf (Setting "wolf"): what a new event's wolf has, the revive price, the reward for killing it. */
+export interface WolfSettings {
+  power: number;
+  health: number;
+  reviveGems: number;
+  rewardXp: number;
+  rewardCoins: number;
+}
+export const DEFAULT_WOLF: WolfSettings = { power: 500, health: 5000, reviveGems: 300, rewardXp: 300, rewardCoins: 300 };
 
 // ----------------------------------------------------------------------------- the market
 
@@ -311,6 +342,11 @@ export function publicDefs(gemPacks: GemPack[]) {
     skillTracks: SKILL_TRACKS,
     skillResetSeconds: SKILL_RESET_SECONDS,
     combatPower: COMBAT_POWER,
+    basePower: BASE_POWER,
+    baseHealth: BASE_HEALTH,
+    healthStep: HEALTH_STEP,
+    respawnSeconds: RESPAWN_SECONDS,
+    healthRegen: HEALTH_REGEN,
     market: MARKET,
     characters: { list: CHARACTERS, characterChangeGems: CHARACTER_CHANGE_GEMS, genderChangeGems: GENDER_CHANGE_GEMS },
   };

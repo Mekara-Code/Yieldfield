@@ -4,7 +4,8 @@ import { expiredListings, listingName, marketContext, salesSince } from '../mark
 import { isVip, perksOf, sourceOf, standing, STANDING_SELECT, vipPlans } from '../reputation';
 import { allBonus, ensureTasks, taskCoins, today, type Task } from '../tasks';
 import { DEFAULT_GEM_PACKS, publicDefs, type GemPack } from './defs';
-import { addXp, apply, combatPower, skillPointsFree, type Action, type Outcome, type Signal } from './rules';
+import { activeWolfEvent, wolfSettings } from '../events';
+import { addXp, apply, combatPower, healthNow, maxHealth, skillPointsFree, wolfOf, type Action, type Outcome, type Signal, type WolfEventCtx } from './rules';
 import { isServerFarm, migrate, newFarm, withDefaults, type Farm } from './state';
 
 /**
@@ -28,10 +29,24 @@ export async function gemPacks(): Promise<GemPack[]> {
   return Array.isArray(packs) && packs.length ? packs : DEFAULT_GEM_PACKS;
 }
 
-/** The farm as the game is sent it (all of it but the action ids), with its free skill points and combat power. */
-export function publicFarm(farm: Farm) {
-  const { recent: _recent, ...rest } = withDefaults(farm);
-  return { ...rest, skillPointsFree: skillPointsFree(farm), combatPower: combatPower(farm) };
+/** The farm as the game is sent it (all of it but the action ids), with its free skill points, combat power,
+ *  health now (and the most), and the wolf of the event on now as this farm has it (null: no wolf event). */
+export function publicFarm(farm: Farm, now: number, event: WolfEventCtx | null = null) {
+  const { recent: _recent, wolf: _wolf, ...rest } = withDefaults(farm);
+  return {
+    ...rest,
+    skillPointsFree: skillPointsFree(farm),
+    combatPower: combatPower(farm),
+    health: healthNow(farm, now),
+    maxHealth: maxHealth(farm),
+    wolfEvent: wolfOf(farm, event),
+  };
+}
+
+/** What the game is told of the admins' wolf: the revive price and the reward for killing it. */
+async function wolfDefs() {
+  const w = await wolfSettings();
+  return { reviveGems: w.reviveGems, rewardXp: w.rewardXp, rewardCoins: w.rewardCoins };
 }
 
 /** Starts a new day's counts when the (UTC) day has turned. */
@@ -87,10 +102,12 @@ function taskView(farm: Farm, claimed: Set<string>) {
 /** The farm for the game at sign-in: a save from before the server kept the farm is taken over now. */
 export async function loadGame(userId: string) {
   const now = nowSeconds();
-  const [row, user, packs] = await Promise.all([
+  const [row, user, packs, event, wolf] = await Promise.all([
     prisma.farm.findUnique({ where: { userId } }),
     prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { bloom: true, gems: true } }),
     gemPacks(),
+    activeWolfEvent(),
+    wolfDefs(),
   ]);
   let state = row?.state ?? null;
   let revision = row?.revision ?? 0;
@@ -102,11 +119,11 @@ export async function loadGame(userId: string) {
     revision = saved.revision;
   }
   return {
-    state: state && isServerFarm(state) ? publicFarm(state) : null,
+    state: state && isServerFarm(state) ? publicFarm(state, now, event) : null,
     revision,
     wallet: { coins: state && isServerFarm(state) ? state.coins : 0, bloom: user.bloom, gems: user.gems },
     now,
-    defs: publicDefs(packs),
+    defs: { ...publicDefs(packs), wolf },
   };
 }
 
@@ -142,8 +159,9 @@ export async function performAction(userId: string, actionId: string, action: Ac
     const source = sourceOf(user);
     const vip = isVip(user.vipUntil);
     const { tasks, claimed } = await ensureTasks(userId, before, vip);
+    const [event, wolf] = await Promise.all([activeWolfEvent(), wolfSettings()]);
     const view = (farm: Farm, bloom = user.bloom, gems = user.gems, extra: Record<string, unknown> = {}, claims = claimed) => ({
-      state: publicFarm(farm),
+      state: publicFarm(farm, now, event),
       revision: row.revision,
       wallet: { coins: farm.coins, bloom, gems },
       tasks: taskView(farm, claims),
@@ -177,6 +195,9 @@ export async function performAction(userId: string, actionId: string, action: Ac
       gemPacks: packs,
       expired,
       market,
+      nowMs: Date.now(),
+      wolfEvent: event,
+      wolfSettings: wolf,
     });
     if (out.error) {
       return { status: 422, body: { error: out.error, code: 'refused', ...view(before) } };

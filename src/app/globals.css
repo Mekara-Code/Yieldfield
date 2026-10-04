@@ -661,3 +661,50 @@ th {
     grid-column: auto !important;
   }
 }
+
+/* ---------------------------------------------------------------- events (the wolf) */
+
+.event-form {
+  display: grid;
+  gap: 0 14px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.event-form .wide-field {
+  grid-column: 1 / -1;
+}
+
+.pill.upcoming {
+  background: var(--gold-soft);
+  color: var(--gold);
+  border-color: transparent;
+}
+
+.pill.cancelled {
+  color: var(--red);
+}
+
+.wolf-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: #1d1a24;
+  color: #f1ecf7;
+  border: 1px solid #3a3346;
+}
+
+.wolf-banner strong {
+  font-size: 16px;
+}
+
+.wolf-banner .muted {
+  color: #b9b0c6;
+}
+
+.wolf-banner.dead {
+  background: #3a1216;
+  border-color: #6b1f27;
+}
