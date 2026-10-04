@@ -9,6 +9,7 @@ export const runtime = 'nodejs';
 
 const Stat = z.number().int().min(1).max(10_000_000);
 const Change = z.object({
+  name: z.string().trim().min(1).max(40).optional(),
   power: Stat.optional(),
   health: Stat.optional(),
   startsAt: z.string().datetime({ offset: true }).optional(),

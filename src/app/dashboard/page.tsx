@@ -48,7 +48,7 @@ interface FarmState {
   maxHealth?: number;
   deadUntil?: number;
   deathCause?: string;
-  wolfEvent?: { id: string; power: number; health: number; left: number; endsAt: number; killed: boolean } | null;
+  wolfEvent?: { id: string; name?: string; power: number; health: number; left: number; endsAt: number; killed: boolean } | null;
 }
 interface Wallet {
   coins: number;
@@ -618,6 +618,7 @@ function WolfBanner({ state, now }: { state: FarmState; now: number }) {
   if (wolf) {
     return (
       <div className="wolf-banner" style={{ marginBottom: 18 }}>
+        <span className="pill upcoming">{wolf.name || 'The Black Wolf'}</span>
         <strong>{wolf.killed ? 'You killed the wolf on your farm' : 'A wolf is loose on the farms'}</strong>
         {!wolf.killed && (
           <span>

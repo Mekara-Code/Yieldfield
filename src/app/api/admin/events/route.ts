@@ -19,6 +19,7 @@ export async function GET(request: Request) {
 const Stat = z.number().int().min(1).max(10_000_000);
 
 const NewEvent = z.object({
+  name: z.string().trim().min(1).max(40).optional(),
   startsAt: z.string().datetime({ offset: true }),
   hours: z.number().min(0.25).max(24 * 14),
   power: Stat.optional(),
@@ -43,6 +44,7 @@ export async function POST(request: Request) {
     return problem(400, 'That would be over already');
   }
   await createEvent({
+    name: body.data.name,
     startsAt,
     endsAt,
     power: body.data.power ?? settings.power,

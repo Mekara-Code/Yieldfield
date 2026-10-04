@@ -77,6 +77,7 @@ export type Action =
 /** The wolf event on now (src/lib/events.ts), as an action reads it: times in Unix seconds. */
 export interface WolfEventCtx {
   id: string;
+  name: string;
   power: number;
   health: number;
   startsAt: number;
@@ -369,7 +370,7 @@ export function wolfOf(farm: Farm, event: WolfEventCtx | null | undefined) {
   }
   const mine = farm.wolf?.event === event.id ? farm.wolf : null;
   const left = Math.max(0, event.health - (mine?.damage ?? 0));
-  return { id: event.id, power: event.power, health: event.health, left, endsAt: event.endsAt, killed: !!mine?.killedAt || left <= 0 };
+  return { id: event.id, name: event.name, power: event.power, health: event.health, left, endsAt: event.endsAt, killed: !!mine?.killedAt || left <= 0 };
 }
 
 /** The wolf a strike or bite is about: the event on now (the one the game means), alive on this farm. */

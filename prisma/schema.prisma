@@ -264,6 +264,8 @@ model Listing {
 model GameEvent {
   id          String    @id @default(cuid())
   kind        String
+  /// Its title, shown to the players (the game's badge, the site's banner).
+  name        String    @default("The Black Wolf")
   startsAt    DateTime
   endsAt      DateTime
   /// The wolf's power (health a bite takes off a farmer) and its health on each farm.

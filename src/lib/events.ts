@@ -10,6 +10,7 @@ import type { WolfEventCtx } from './game/rules';
  */
 
 export const WOLF_KIND = 'wolf';
+export const DEFAULT_EVENT_NAME = 'The Black Wolf';
 
 export async function wolfSettings(): Promise<WolfSettings> {
   const row = await prisma.setting.findUnique({ where: { key: 'wolf' } });
@@ -22,10 +23,10 @@ export async function saveWolfSettings(settings: WolfSettings) {
   forget();
 }
 
-type EventRow = { id: string; kind: string; startsAt: Date; endsAt: Date; power: number; health: number; note: string | null; createdBy: string; createdAt: Date; cancelledAt: Date | null };
+type EventRow = { id: string; kind: string; name: string; startsAt: Date; endsAt: Date; power: number; health: number; note: string | null; createdBy: string; createdAt: Date; cancelledAt: Date | null };
 
 export function eventCtx(row: EventRow): WolfEventCtx {
-  return { id: row.id, power: row.power, health: row.health, startsAt: Math.floor(row.startsAt.getTime() / 1000), endsAt: Math.floor(row.endsAt.getTime() / 1000) };
+  return { id: row.id, name: row.name, power: row.power, health: row.health, startsAt: Math.floor(row.startsAt.getTime() / 1000), endsAt: Math.floor(row.endsAt.getTime() / 1000) };
 }
 
 let cache: { at: number; event: WolfEventCtx | null } | null = null;
@@ -86,6 +87,7 @@ export async function listEvents(take = 60) {
   return rows.map((r) => ({
     id: r.id,
     kind: r.kind,
+    name: r.name,
     startsAt: r.startsAt.toISOString(),
     endsAt: r.endsAt.toISOString(),
     power: r.power,
@@ -100,19 +102,20 @@ export async function listEvents(take = 60) {
   }));
 }
 
-export async function createEvent(input: { startsAt: Date; endsAt: Date; power: number; health: number; note?: string; createdBy: string }) {
-  const row = await prisma.gameEvent.create({ data: { kind: WOLF_KIND, ...input, note: input.note || null } });
+export async function createEvent(input: { name?: string; startsAt: Date; endsAt: Date; power: number; health: number; note?: string; createdBy: string }) {
+  const row = await prisma.gameEvent.create({ data: { kind: WOLF_KIND, ...input, name: input.name || DEFAULT_EVENT_NAME, note: input.note || null } });
   forget();
   return row;
 }
 
-export async function updateEvent(id: string, change: { power?: number; health?: number; startsAt?: Date; endsAt?: Date; note?: string | null; cancel?: boolean; endNow?: boolean }) {
+export async function updateEvent(id: string, change: { name?: string; power?: number; health?: number; startsAt?: Date; endsAt?: Date; note?: string | null; cancel?: boolean; endNow?: boolean }) {
   const row = await prisma.gameEvent.findUnique({ where: { id } });
   if (!row) {
     return null;
   }
   const now = new Date();
   const data: Record<string, unknown> = {};
+  if (change.name) data.name = change.name;
   if (change.power !== undefined) data.power = change.power;
   if (change.health !== undefined) data.health = change.health;
   if (change.startsAt) data.startsAt = change.startsAt;

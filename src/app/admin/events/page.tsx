@@ -13,6 +13,7 @@ interface WolfSettings {
 }
 interface WolfEvent {
   id: string;
+  name: string;
   startsAt: string;
   endsAt: string;
   power: number;
@@ -57,6 +58,7 @@ export default function EventsPage() {
   const [power, setPower] = useState(500);
   const [health, setHealth] = useState(5000);
   const [note, setNote] = useState('');
+  const [name, setName] = useState('The Black Wolf');
   const [edits, setEdits] = useState<Record<string, { power: number; health: number }>>({});
 
   const take = useCallback((d: EventsData) => {
@@ -85,10 +87,10 @@ export default function EventsPage() {
       return;
     }
     const what = now ? `now, for ${hours} hours` : `on ${startsAt.toLocaleString()} for ${hours} hours`;
-    if (!window.confirm(`Let the wolf loose on every farm ${what}? Power ${power}, health ${health}.`)) {
+    if (!window.confirm(`Let "${name}" loose on every farm ${what}? Power ${power}, health ${health}.`)) {
       return;
     }
-    const { data: d, error } = await call('/api/admin/events', 'POST', { startsAt: startsAt.toISOString(), hours, power, health, note: note || undefined });
+    const { data: d, error } = await call('/api/admin/events', 'POST', { name: name.trim() || undefined, startsAt: startsAt.toISOString(), hours, power, health, note: note || undefined });
     if (d) {
       take(d);
       setNote('');
@@ -163,6 +165,10 @@ export default function EventsPage() {
           {settings.rewardXp} XP and {settings.rewardCoins} coins.
         </p>
         <div className="event-form">
+          <div className="wide-field">
+            <label htmlFor="ev-name">Event name (the players see it on a badge in the game)</label>
+            <input id="ev-name" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} />
+          </div>
           <div>
             <label htmlFor="ev-day">Day</label>
             <input id="ev-day" type="date" value={day} onChange={(e) => setDay(e.target.value)} />
@@ -257,7 +263,8 @@ export default function EventsPage() {
                   return (
                     <tr key={e.id}>
                       <td>
-                        {when(e.startsAt)}
+                        <b>{e.name}</b>
+                        <div>{when(e.startsAt)}</div>
                         <div className="muted small">
                           for {hoursBetween(e.startsAt, e.endsAt)}
                           {e.note ? ` · ${e.note}` : ''}
