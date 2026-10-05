@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { authenticate } from '../../../../lib/auth';
 import { startGame } from '../../../../lib/game/engine';
 import { json, problem, readBody } from '../../../../lib/http';
+import { ensureHome } from '../../../../lib/map/world';
 
 export const runtime = 'nodejs';
 
@@ -17,5 +18,7 @@ export async function POST(request: Request) {
   if ('response' in body) {
     return body.response;
   }
-  return json(await startGame(claims.userId, body.data.plots, body.data.starter));
+  const game = await startGame(claims.userId, body.data.plots, body.data.starter);
+  const home = await ensureHome(claims.userId).catch(() => null);
+  return json({ ...game, mapHome: home && { name: home.name, x: home.x, y: home.y } });
 }

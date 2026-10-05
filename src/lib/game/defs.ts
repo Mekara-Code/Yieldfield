@@ -93,7 +93,7 @@ export const BUILDINGS: BuildingDef[] = [
 ];
 
 /**
- * The embassy (src/lib/map.ts reads it): built at level 25 (it is level 1 then) and raised to level 10, each
+ * The embassy (src/lib/map/world.ts reads it): built at level 25 (it is level 1 then) and raised to level 10, each
  * level at player level 25 or more. Each level is one more farm out on the world map (built or taken), a
  * longer reach for raids, more loot carried home and a little more strength in battle.
  */
@@ -355,7 +355,7 @@ export function publicDefs(gemPacks: GemPack[]) {
       needLevel: EMBASSY.needLevel,
       levels: Array.from({ length: EMBASSY.maxLevel }, (_, i) => {
         const level = i + 1;
-        return { level, cost: level === 1 ? 25000 : EMBASSY.upgradeCost(level), seconds: level === 1 ? 4 * 3600 : EMBASSY.upgradeSeconds(level), slots: EMBASSY.slots(level), range: EMBASSY.range(level), carry: EMBASSY.carry(level) };
+        return { level, cost: level === 1 ? 25000 : EMBASSY.upgradeCost(level), seconds: level === 1 ? 4 * 3600 : EMBASSY.upgradeSeconds(level), slots: EMBASSY.slots(level), range: EMBASSY.range(level), carry: EMBASSY.carry(level), power: Math.round(EMBASSY.powerBonus(level) * 100) };
       }),
     },
     fedSeconds: FED_SECONDS,
