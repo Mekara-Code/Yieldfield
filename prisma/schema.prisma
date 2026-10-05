@@ -116,6 +116,9 @@ model Session {
   createdAt DateTime  @default(now())
   expiresAt DateTime
   revokedAt DateTime?
+  /// Replaced by a newer token (a refresh), rather than signed out: a retry with it soon after still works,
+  /// since the answer to that refresh may never have reached the device (src/lib/auth.ts refreshTokens).
+  rotatedAt DateTime?
 
   @@index([userId])
 }

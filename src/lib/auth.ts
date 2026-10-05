@@ -85,26 +85,36 @@ export async function issueTokens(user: PublicUser, client: Client): Promise<Tok
 }
 
 /**
- * Trades a refresh token for new tokens (the old one stops working). A token used a second
- * time means it was copied: every session of that player is signed out.
+ * Trades a refresh token for new tokens (the old one stops working). A token used a second time means it
+ * was copied, and every session of that player is signed out; but not when it comes back within
+ * ROTATION_GRACE_MS of its own refresh: then the answer to that refresh never reached the device (a dropped
+ * connection on a phone, the game closed meanwhile), and it gets new tokens again rather than being signed out.
  */
+const ROTATION_GRACE_MS = 10 * 60_000;
+
 export async function refreshTokens(refreshToken: string): Promise<{ tokens: Tokens; client: Client } | null> {
   const session = await prisma.session.findUnique({ where: { tokenHash: hashToken(refreshToken) }, include: { user: true } });
   if (!session) {
     return null;
   }
+  const client = session.client === 'game' ? 'game' : 'web';
   if (session.revokedAt) {
+    const lostAnswer = session.rotatedAt && Date.now() - session.rotatedAt.getTime() < ROTATION_GRACE_MS && session.expiresAt > new Date();
+    if (lostAnswer) {
+      return { tokens: await issueTokens(session.user, client), client };
+    }
     await prisma.session.updateMany({ where: { userId: session.userId, revokedAt: null }, data: { revokedAt: new Date() } });
     return null;
   }
   if (session.expiresAt < new Date()) {
     return null;
   }
-  const revoked = await prisma.session.updateMany({ where: { id: session.id, revokedAt: null }, data: { revokedAt: new Date() } });
+  const now = new Date();
+  const revoked = await prisma.session.updateMany({ where: { id: session.id, revokedAt: null }, data: { revokedAt: now, rotatedAt: now } });
   if (revoked.count === 0) {
-    return null; // refreshed at the same moment elsewhere
+    // Refreshed at the same moment by another request of the same device: that one has the new tokens.
+    return null;
   }
-  const client = session.client === 'game' ? 'game' : 'web';
   return { tokens: await issueTokens(session.user, client), client };
 }
 
