@@ -4,6 +4,7 @@ import {
   animalExtra,
   animalLevel,
   BUILDINGS,
+  EMBASSY,
   COMPANION_LEVEL,
   COMPANION_PRICE,
   CROPS,
@@ -58,6 +59,7 @@ export type Action =
   | { type: 'till' | 'water' | 'harvest' | 'buy_plot'; plot: number }
   | { type: 'plant'; plot: number; crop: string }
   | { type: 'build'; building: string }
+  | { type: 'upgrade'; building: string }
   | { type: 'buy_seeds'; crop: string; count: number }
   | { type: 'buy_animal'; kind: AnimalKind }
   | { type: 'milk' | 'shear' | 'feed' | 'leather'; animal: string }
@@ -433,9 +435,18 @@ function settle(farm: Farm, ctx: Ctx, out: Outcome) {
       const b = findBuilding(id);
       if (b && !farm.buildings.includes(id)) {
         farm.buildings.push(id);
+        if (id === 'Embassy') {
+          farm.embassy = 1;
+        }
         addXp(farm, XP.building, out);
         out.notices.push(`The ${b.name} is built! ${b.gives}`);
         out.events.push({ kind: 'built', data: { building: id } });
+      } else if (id === 'Embassy' && farm.embassy < EMBASSY.maxLevel) {
+        // A level more for the embassy.
+        farm.embassy += 1;
+        addXp(farm, XP.building, out);
+        out.notices.push(`The Embassy is level ${farm.embassy}: ${EMBASSY.slots(farm.embassy)} farms on the map, a reach of ${EMBASSY.range(farm.embassy)} squares`);
+        out.events.push({ kind: 'embassy', data: { level: farm.embassy } });
       }
     }
   }
@@ -621,6 +632,29 @@ function run(farm: Farm, action: Action, ctx: Ctx, out: Outcome) {
       farm.construction[b.id] = now + seconds;
       out.notices.push(`Building the ${b.name}: done in ${duration(seconds)}`);
       out.events.push({ kind: 'build', data: { building: b.id, cost: b.price, seconds } });
+      out.result.readyAt = now + seconds;
+      return;
+    }
+    case 'upgrade': {
+      if (action.building !== 'Embassy' || !farm.buildings.includes('Embassy')) {
+        refuse('Build the Embassy first');
+      }
+      if (farm.embassy >= EMBASSY.maxLevel) {
+        refuse(`The Embassy is at its highest level (${EMBASSY.maxLevel})`);
+      }
+      if (farm.construction.Embassy) {
+        refuse(`The Embassy is being raised: done in ${duration(farm.construction.Embassy - now)}`);
+      }
+      if (levelForXp(farm.xp) < EMBASSY.needLevel) {
+        refuse(`Reach level ${EMBASSY.needLevel} to raise the Embassy`);
+      }
+      const next = farm.embassy + 1;
+      const cost = EMBASSY.upgradeCost(next);
+      spendCoins(farm, cost, `Embassy level ${next}`);
+      const seconds = Math.max(60, Math.round(EMBASSY.upgradeSeconds(next) * timeFactor(farm, 'building')));
+      farm.construction.Embassy = now + seconds;
+      out.notices.push(`Raising the Embassy to level ${next}: done in ${duration(seconds)}`);
+      out.events.push({ kind: 'build', data: { building: 'Embassy', level: next, cost, seconds } });
       out.result.readyAt = now + seconds;
       return;
     }

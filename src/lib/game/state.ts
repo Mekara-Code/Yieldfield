@@ -52,6 +52,8 @@ export interface Farm {
   animals: Animal[];
   buildings: string[];
   companion: string;
+  /** The embassy's level (0: not built; src/lib/game/defs.ts EMBASSY). */
+  embassy: number;
   taskDay: string;
   taskProgress: Record<string, number>;
   traderSales: Record<string, number>;
@@ -91,6 +93,7 @@ export interface FarmWolf {
 /** What farms made before a field existed lack: added (a farm read from the database goes through it). */
 export function withDefaults(farm: Farm): Farm {
   farm.construction ??= {};
+  farm.embassy ??= farm.buildings?.includes('Embassy') ? 1 : 0;
   farm.skills ??= {};
   farm.skillResetAt ??= 0;
   farm.skillCarry ??= {};
@@ -128,6 +131,7 @@ export function newFarm(plotIndices: number[], starter: number): Farm {
     animals: [],
     buildings: [],
     companion: '',
+    embassy: 0,
     taskDay: '',
     taskProgress: {},
     traderSales: {},
@@ -296,6 +300,7 @@ export function migrate(old: Record<string, unknown>, now: number): Farm {
     animals,
     buildings: Array.isArray(old.buildings) ? (old.buildings as string[]) : [],
     companion: typeof old.companion === 'string' ? old.companion : '',
+    embassy: 0,
     taskDay: typeof old.taskDay === 'string' ? old.taskDay : '',
     taskProgress: {},
     traderSales: rec(old.traderSales),

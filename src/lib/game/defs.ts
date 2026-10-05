@@ -89,7 +89,27 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'Coop', name: 'Hen house', level: 3, price: 400, seconds: 30 * 60, gives: 'Keep hens: an egg each every 4 hours' },
   { id: 'Market', name: 'Market stall', level: 4, price: 1000, seconds: 3 * 3600, gives: 'Sell crops, products and animals to other farmers, and buy theirs, for BLOOM (needs 600 reputation)' },
   { id: 'Barn', name: 'Barn and paddock', level: 5, price: 1200, seconds: 2 * 3600, gives: 'Keep sheep (milk, wool), and cows from level 8' },
+  { id: 'Embassy', name: 'Embassy', level: 25, price: 25000, seconds: 4 * 3600, gives: 'Your farm on the world map: a farm out there for each of its levels, raids and conquests (with VIP)' },
 ];
+
+/**
+ * The embassy (src/lib/map.ts reads it): built at level 25 (it is level 1 then) and raised to level 10, each
+ * level at player level 25 or more. Each level is one more farm out on the world map (built or taken), a
+ * longer reach for raids, more loot carried home and a little more strength in battle.
+ */
+export const EMBASSY = {
+  maxLevel: 10,
+  needLevel: 25,
+  /** Coins and seconds to raise it to level L (2..10). */
+  upgradeCost: (level: number) => Math.round((25000 * Math.pow(level, 1.6)) / 1000) * 1000,
+  upgradeSeconds: (level: number) => (2 + level) * 3600,
+  /** Farms out on the map it allows, how far (in map squares) from one of the player's farms it reaches, what a raid carries home (coins' worth). */
+  slots: (level: number) => level,
+  range: (level: number) => (level > 0 ? 20 + 8 * level : 0),
+  carry: (level: number) => (level > 0 ? 3000 + 2000 * level : 0),
+  /** Strength in battle, as a share more. */
+  powerBonus: (level: number) => 0.04 * level,
+};
 
 // ----------------------------------------------------------------------------- skills
 
@@ -329,6 +349,15 @@ export function publicDefs(gemPacks: GemPack[]) {
     products: PRODUCTS,
     animals: ANIMALS,
     buildings: BUILDINGS,
+    // The embassy's levels: what raising it to each costs, and what each gives.
+    embassy: {
+      maxLevel: EMBASSY.maxLevel,
+      needLevel: EMBASSY.needLevel,
+      levels: Array.from({ length: EMBASSY.maxLevel }, (_, i) => {
+        const level = i + 1;
+        return { level, cost: level === 1 ? 25000 : EMBASSY.upgradeCost(level), seconds: level === 1 ? 4 * 3600 : EMBASSY.upgradeSeconds(level), slots: EMBASSY.slots(level), range: EMBASSY.range(level), carry: EMBASSY.carry(level) };
+      }),
+    },
     fedSeconds: FED_SECONDS,
     maxFedAhead: MAX_FED_AHEAD,
     maxEnergy: MAX_ENERGY,

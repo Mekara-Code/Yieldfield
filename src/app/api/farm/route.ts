@@ -1,5 +1,6 @@
 import { authenticate } from '../../../lib/auth';
 import { loadGame } from '../../../lib/game/engine';
+import { ensureHome } from '../../../lib/map/world';
 import { json, problem } from '../../../lib/http';
 import { checkOpenOrders } from '../../../lib/shop';
 import { scanDeposits } from '../../../lib/wallets';
@@ -15,7 +16,9 @@ export async function GET(request: Request) {
   // A pack paid for while the game was closed is credited now (bounded, so the farm still loads if a chain is slow).
   // So is anything sent from one of the player's linked wallets.
   await Promise.race([Promise.all([checkOpenOrders(claims.userId), scanDeposits(claims.userId).catch(() => [])]), new Promise((resolve) => setTimeout(resolve, 4000))]);
-  return json(await loadGame(claims.userId));
+  // Every farm has a name and a square of its own on the world map (put down the first time).
+  const [game, home] = await Promise.all([loadGame(claims.userId), ensureHome(claims.userId).catch(() => null)]);
+  return json({ ...game, mapHome: home && { name: home.name, x: home.x, y: home.y } });
 }
 
 /** The game no longer saves its farm: the server keeps it, changed only by actions (POST /api/farm/act). */

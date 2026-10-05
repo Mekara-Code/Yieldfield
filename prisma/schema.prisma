@@ -65,8 +65,78 @@ model User {
   xAvatar         String?
   xLinkedAt       DateTime?
   xClaims         XTaskClaim[]
+  /// Their farms on the world map: the home farm and the farms out there (src/lib/map/world.ts).
+  mapFarms        MapFarm[]
+  battles         Battle[]
 
   @@index([referredById])
+}
+
+/**
+ * A farm on the world map (src/lib/map/world.ts): a player's home farm ("home", the one they play in, safe),
+ * a farm of theirs out on the map ("outpost": built or taken, it gathers coins and produce for them), or a
+ * bandits' farm ("wild", taken or raided by anyone). Each has its own name and square.
+ */
+model MapFarm {
+  id          String    @id @default(cuid())
+  kind        String
+  /// The player it belongs to (null: the bandits', or a deleted player's, left to anyone).
+  ownerId     String?
+  owner       User?     @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  name        String
+  /// The name in lower case: names are one of a kind.
+  nameKey     String    @unique
+  x           Int
+  y           Int
+  biome       String
+  /// The bandits' strength (wild farms), 1 and up.
+  tier        Int       @default(1)
+  /// What it had gathered at storedAt (coins, and produce by item); it gathers more by the hour up to its store.
+  coins       Int       @default(0)
+  produce     Json      @default("{}")
+  storedAt    DateTime  @default(now())
+  /// Nobody may attack it until then (just raided, taken or built).
+  shieldUntil DateTime?
+  /// When it changed hands last.
+  takenAt     DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([x, y])
+  @@index([ownerId])
+}
+
+/** A part of the map (16 x 16 squares) whose bandits' farms have been put down already. */
+model MapChunk {
+  cx        Int
+  cy        Int
+  createdAt DateTime @default(now())
+
+  @@id([cx, cy])
+}
+
+/** An attack on a farm: the fight, round by round (worked out here, played back in the game), and what the winner chose. */
+model Battle {
+  id         String    @id @default(cuid())
+  attackerId String
+  attacker   User      @relation(fields: [attackerId], references: [id], onDelete: Cascade)
+  farmId     String
+  /// The farm's owner when attacked (null: bandits).
+  defenderId String?
+  win        Boolean
+  /// Both sides as they fought ({ attacker, defender: { name, power, health, character } }) and the rounds:
+  /// [{ a: attacker's damage, ac: a critical, d: defender's damage, dc, ha: attacker's health after, hd: defender's }]
+  log        Json
+  /// "plunder" or "capture" (a won battle, once chosen), and what it brought.
+  choice     String?
+  loot       Json?
+  /// A win must be acted on by then.
+  expiresAt  DateTime
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([attackerId, createdAt])
+  @@index([defenderId, createdAt])
+  @@index([farmId, createdAt])
 }
 
 /// A reward for inviting players: coins for an invitee who played a little, BLOOM for each group of invitees who bought VIP.

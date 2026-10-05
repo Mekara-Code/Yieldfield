@@ -6,6 +6,7 @@ import { api, getAccessToken, itemName, refreshAccess, setAccessToken } from '..
 import { BloomIcon, CoinIcon, GemIcon, MONEY } from '../../components/Bloom';
 import { HistoryCard, MarketCard, SkillsCard, StandingCard, type MeAccount } from './Account';
 import { InviteCard, XTasksCard } from './Social';
+import { WorldMapCard } from './WorldMap';
 
 /** The farm as the server keeps it (src/lib/game/state.ts): times are Unix seconds, the server's clock. */
 interface Plot {
@@ -183,6 +184,24 @@ function describe(e: FarmEvent) {
       return `Reset the skills (${d.points} points back)`;
     case 'referral_reward':
       return `Friends you invited earned you ${[Number(d.coins) ? `${d.coins} coins` : '', Number(d.bloom) ? `${d.bloom} ${MONEY}` : ''].filter(Boolean).join(' and ')}`;
+    case 'embassy':
+      return `The Embassy reached level ${d.level}`;
+    case 'map_built':
+      return `Built ${d.farm} on the world map (${d.x}, ${d.y}) for ${d.coins} coins`;
+    case 'map_plundered':
+      return `Raided ${d.farm}: ${d.coins} coins and more`;
+    case 'map_captured':
+      return `Captured ${d.farm}`;
+    case 'map_collected':
+      return `Brought home ${d.coins} coins from ${d.farms} farm${Number(d.farms) === 1 ? '' : 's'} on the map`;
+    case 'map_attack_held':
+      return `${d.by} attacked ${d.farm}: your farmer held`;
+    case 'map_attack_lost':
+      return `${d.by} beat your farmer at ${d.farm}`;
+    case 'map_raided':
+      return `${d.by} raided ${d.farm} (${d.coins} coins)`;
+    case 'map_lost':
+      return `${d.by} captured ${d.farm}`;
     case 'x_task':
       return `Done on X: ${({ connect: 'linked your X account', follow: 'followed the game\'s page', like: 'liked the game\'s post', share: 'posted your farm card' } as Record<string, string>)[String(d.task)] ?? d.task} · +${d.coins} coins`;
     case 'discord':
@@ -589,6 +608,7 @@ export default function Dashboard() {
             )}
           </div>
           <HistoryCard />
+          <WorldMapCard />
           <InviteCard />
           {me && <XTasksCard username={me.username} />}
         </div>

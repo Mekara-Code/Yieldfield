@@ -13,6 +13,7 @@ const ActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.enum(['till', 'water', 'harvest', 'buy_plot']), plot: Plot }),
   z.object({ type: z.literal('plant'), plot: Plot, crop: z.string().max(32) }),
   z.object({ type: z.literal('build'), building: z.string().max(32) }),
+  z.object({ type: z.literal('upgrade'), building: z.string().max(32) }),
   z.object({ type: z.literal('buy_seeds'), crop: z.string().max(32), count: z.number().int().min(1).max(99) }),
   z.object({ type: z.literal('buy_animal'), kind: z.enum(['Chicken', 'Sheep', 'Cow']) }),
   z.object({ type: z.enum(['milk', 'shear', 'feed', 'leather']), animal: Id }),
