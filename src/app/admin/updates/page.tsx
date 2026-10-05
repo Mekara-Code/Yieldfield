@@ -52,6 +52,14 @@ interface UpdatesData {
   releases: Release[];
   storage: { blob: boolean; disk: boolean };
 }
+/** The Blob store's files: those some version uses, and the rest (a cut-off upload's, a second copy). */
+interface BlobsData {
+  files: { pathname: string; url: string; size: number; uploadedAt: string; used: boolean }[];
+  total: number;
+  limit: number;
+  /** Content pack files versions have already, by SHA-1. */
+  packFiles: Record<string, string>;
+}
 
 const megabytes = (bytes: number) => (bytes > 0 ? `${(bytes / 1_048_576).toFixed(bytes > 100 * 1_048_576 ? 0 : 1)} MB` : '—');
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -105,6 +113,13 @@ export default function UpdatesPage() {
   const [patchNote, setPatchNote] = useState<string | null>(null);
   const [packFiles, setPackFiles] = useState<File[]>([]);
   const [progress, setProgress] = useState(0);
+  const [blobs, setBlobs] = useState<BlobsData | null>(null);
+
+  const loadBlobs = useCallback(async () => {
+    const { data: b } = await apiResult<BlobsData>('/api/admin/releases/blobs');
+    setBlobs(b);
+    return b;
+  }, []);
 
   const take = useCallback((d: UpdatesData) => {
     setData(d);
@@ -119,8 +134,11 @@ export default function UpdatesPage() {
         return;
       }
       take(d);
+      if (d.storage.blob) {
+        void loadBlobs();
+      }
     })();
-  }, [take]);
+  }, [take, loadBlobs]);
 
   async function pick(chosen: File | null) {
     setFile(chosen);
@@ -185,6 +203,11 @@ export default function UpdatesPage() {
       return;
     }
     try {
+      // What's on Blob already: a file uploaded before (the same name and size: a publish cut off and tried again) is
+      // used as it is, and a content pack file another version has is used again: never a second copy.
+      const stored = where === 'blob' ? await loadBlobs() : null;
+      const already = (prefix: string, extension: string, bytes: number) =>
+        stored?.files.find((f) => f.pathname.startsWith(prefix) && f.pathname.endsWith(extension) && f.size === bytes)?.url ?? null;
       let url = link.trim();
       let size = file?.size ?? 0;
       const name = `BattleBloom-${versionName.trim()}.apk`;
@@ -195,16 +218,21 @@ export default function UpdatesPage() {
         url = put.url;
         size = put.size;
       } else if (where === 'blob' && file) {
-        setBusy(`Uploading ${name} to Vercel Blob…`);
-        const blob = await upload(`releases/${name}`, file, {
-          access: 'public',
-          handleUploadUrl: '/api/admin/releases/upload',
-          headers: { Authorization: `Bearer ${bearer}` },
-          contentType: 'application/vnd.android.package-archive',
-          multipart: true,
-          onUploadProgress: (e) => setProgress(e.percentage / 100),
-        });
-        url = blob.url;
+        const there = already(`releases/BattleBloom-${versionName.trim()}-`, '.apk', file.size);
+        if (there) {
+          url = there;
+        } else {
+          setBusy(`Uploading ${name} to Vercel Blob…`);
+          const blob = await upload(`releases/${name}`, file, {
+            access: 'public',
+            handleUploadUrl: '/api/admin/releases/upload',
+            headers: { Authorization: `Bearer ${bearer}` },
+            contentType: 'application/vnd.android.package-archive',
+            multipart: true,
+            onUploadProgress: (e) => setProgress(e.percentage / 100),
+          });
+          url = blob.url;
+        }
       }
       // The content packs: each file checked (SHA-1) and put beside the version's (their names kept for the game).
       const packs = new Map<number, { chunk: number; files: { name: string; size: number; sha1: string; url: string }[] }>();
@@ -215,7 +243,12 @@ export default function UpdatesPage() {
         setProgress(i / packFiles.length);
         const sha1 = await sha1Of(file);
         let fileUrl: string;
-        if (where === 'disk') {
+        const base = file.name.replace(/\.[^.]+$/, '');
+        const extension = file.name.slice(base.length);
+        const reused = stored?.packFiles[sha1] ?? already(`content/${versionCode}/${base}-`, extension, file.size);
+        if (reused) {
+          fileUrl = reused;
+        } else if (where === 'disk') {
           fileUrl = (await putOnServer(file, `c${versionCode}-${file.name}`, bearer, () => {})).url;
         } else {
           const blob = await upload(`content/${versionCode}/${file.name}`, file, {
@@ -240,6 +273,8 @@ export default function UpdatesPage() {
           setBusy(`Uploading the patch from code ${patch.from}…`);
           const put = await putOnServer(patch.file, patchName, bearer, setProgress);
           deltas.push({ from: patch.from, url: put.url, size: put.size });
+        } else if (where === 'blob' && already(`releases/BattleBloom-${patch.from}-to-${patch.to}-`, '.yfd', patch.file.size)) {
+          deltas.push({ from: patch.from, url: already(`releases/BattleBloom-${patch.from}-to-${patch.to}-`, '.yfd', patch.file.size)!, size: patch.file.size });
         } else if (where === 'blob') {
           setBusy(`Uploading the patch from code ${patch.from} to Vercel Blob…`);
           const blob = await upload(`releases/${patchName}`, patch.file, {
@@ -263,6 +298,7 @@ export default function UpdatesPage() {
         throw new Error(error ?? 'Publishing failed');
       }
       take(d);
+      void loadBlobs();
       setFile(null);
       setReadFrom(null);
       setNotes('');
@@ -273,10 +309,25 @@ export default function UpdatesPage() {
       setPackFiles([]);
       setMessage(`Version ${versionName} is out: the game offers it to players from now on${deltas.length ? ` (copies of code ${deltas.map((d) => d.from).join(', ')} download only what changed)` : ''}`);
     } catch (e) {
-      setMessage((e as Error).message);
+      setMessage(`${(e as Error).message} · what was uploaded stays on Blob and is used as it is when you publish again`);
+      void loadBlobs();
     } finally {
       setBusy(null);
     }
+  }
+
+  async function removeUnused() {
+    const unused = blobs?.files.filter((f) => !f.used) ?? [];
+    if (!unused.length || !window.confirm(`Remove ${unused.length} file(s) no version uses (${megabytes(unused.reduce((s, f) => s + f.size, 0))})? Files a version uses are never removed.`)) {
+      return;
+    }
+    const { data: d, error } = await apiResult<{ removed: string[] }>('/api/admin/releases/blobs', {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    setMessage(d ? `Removed ${d.removed.length} file(s)` : error);
+    void loadBlobs();
   }
 
   async function change(release: Release, body: Record<string, unknown>, done: string) {
@@ -424,6 +475,25 @@ export default function UpdatesPage() {
           {busy ? 'Working…' : 'Publish this version'}
         </button>
       </section>
+
+      {data.storage.blob && blobs && (
+        <section className="card">
+          <h2>Vercel Blob storage</h2>
+          <p className="muted small">
+            {megabytes(blobs.total)} of {megabytes(blobs.limit)} used · {blobs.files.filter((f) => f.used).length} files in use by versions
+            {blobs.files.some((f) => !f.used) &&
+              ` · ${blobs.files.filter((f) => !f.used).length} not used by any version (${megabytes(blobs.files.filter((f) => !f.used).reduce((s, f) => s + f.size, 0))}: a publish cut off, or a second copy)`}
+          </p>
+          <div style={{ height: 8, borderRadius: 4, background: 'var(--line)', overflow: 'hidden', margin: '8px 0 12px' }}>
+            <div style={{ width: `${Math.min(100, Math.round((blobs.total / blobs.limit) * 100))}%`, height: '100%', background: blobs.total > blobs.limit * 0.9 ? 'var(--danger, #e66)' : 'var(--gold)' }} />
+          </div>
+          {blobs.files.some((f) => !f.used) && (
+            <button className="button quiet" disabled={Boolean(busy)} onClick={removeUnused}>
+              Remove the files no version uses
+            </button>
+          )}
+        </section>
+      )}
 
       <section className="card">
         <h2>Versions</h2>
