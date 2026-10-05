@@ -6,7 +6,8 @@ import { setAccessToken } from '../lib/client';
 
 type Mode = 'login' | 'register';
 
-export function AuthCard() {
+/** Sign in or make an account (the home page). className styles the card ("card glass" over the dark home page). */
+export function AuthCard({ className = 'card' }: { className?: string }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>('login');
   const [error, setError] = useState('');
@@ -46,7 +47,7 @@ export function AuthCard() {
   }
 
   return (
-    <div className="card">
+    <div className={className}>
       <div className="tabs" role="tablist">
         <button type="button" role="tab" aria-selected={mode === 'login'} onClick={() => setMode('login')}>
           Sign in

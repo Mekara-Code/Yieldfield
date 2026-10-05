@@ -155,7 +155,7 @@ export default function WalletPage() {
 
   return (
     <section className="card wallet">
-      <p className="kicker">Yieldfield</p>
+      <p className="kicker">Battle Bloom</p>
       <h1>{challenge?.mode === 'link' ? 'Connect your wallet' : 'Sign in with your wallet'}</h1>
       {challenge && (
         <p className="muted">

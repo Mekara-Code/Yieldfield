@@ -187,7 +187,7 @@ export default function UpdatesPage() {
     try {
       let url = link.trim();
       let size = file?.size ?? 0;
-      const name = `Yieldfield-${versionName.trim()}.apk`;
+      const name = `BattleBloom-${versionName.trim()}.apk`;
       setProgress(0);
       if (where === 'disk' && file) {
         setBusy(`Uploading ${name} to this server…`);
@@ -234,7 +234,7 @@ export default function UpdatesPage() {
       // The patches from earlier versions, beside it.
       const deltas: { from: number; url: string; size: number }[] = [];
       for (const patch of patches) {
-        const patchName = `Yieldfield-${patch.from}-to-${patch.to}.yfd`;
+        const patchName = `BattleBloom-${patch.from}-to-${patch.to}.yfd`;
         setProgress(0);
         if (where === 'disk') {
           setBusy(`Uploading the patch from code ${patch.from}…`);
@@ -400,7 +400,7 @@ export default function UpdatesPage() {
           {where === 'link' && (
             <div className="wide-field">
               <label htmlFor="up-link">Download address</label>
-              <input id="up-link" value={link} placeholder="https://…/Yieldfield-1.13.apk" onChange={(e) => setLink(e.target.value)} />
+              <input id="up-link" value={link} placeholder="https://…/BattleBloom-1.15.apk" onChange={(e) => setLink(e.target.value)} />
             </div>
           )}
           <div className="wide-field">

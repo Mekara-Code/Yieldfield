@@ -56,10 +56,138 @@ a {
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-weight: 800;
   letter-spacing: 0.02em;
   text-decoration: none;
   font-size: 18px;
+}
+
+.brand img {
+  border-radius: 23%;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+}
+
+/* Over the home page's picture: see-through, light. */
+.top.over {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 20;
+  border-bottom: 0;
+  color: #fff;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0));
+}
+
+.top.over nav a,
+.top.dark nav a {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.top.over nav a:hover,
+.top.dark nav a:hover,
+.top.over nav a.active,
+.top.dark nav a.active {
+  color: #fff;
+}
+
+.top.over .brand span,
+.top.dark .brand span {
+  color: #ffd36b;
+}
+
+.top.dark {
+  background: #0d110b;
+  color: #fff;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.top nav a.active {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.top nav a {
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .top {
+    gap: 12px;
+  }
+
+  .top nav {
+    gap: 14px;
+    font-size: 13px;
+  }
+
+  .top nav .wide-only {
+    display: none;
+  }
+
+  .brand {
+    font-size: 16px;
+    gap: 8px;
+  }
+
+  .brand img {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* The footer: the studio, always on dark. */
+.site-footer {
+  background: #080a07;
+  color: #a7ae9d;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 34px max(16px, calc(50% - 560px));
+}
+
+.footer-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px 40px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.footer-studio {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.footer-studio img {
+  width: 64px;
+  height: auto;
+}
+
+.footer-studio b {
+  display: block;
+  color: #f1ede4;
+  letter-spacing: 0.06em;
+  font-size: 14px;
+}
+
+.footer-studio span {
+  font-size: 13px;
+}
+
+.site-footer nav {
+  display: flex;
+  gap: 22px;
+  font-size: 14px;
+}
+
+.site-footer nav a {
+  color: #c9cfbf;
+  text-decoration: none;
+}
+
+.site-footer nav a:hover {
+  color: #fff;
 }
 
 .brand span {

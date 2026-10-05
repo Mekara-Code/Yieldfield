@@ -68,7 +68,7 @@ export async function createRequest(mode: 'link' | 'login', userId: string | nul
 /** What the wallet signs (EVM and Tron); TON wallets sign the nonce in a TON Connect proof. */
 export function messageFor(request: { mode: string; short: string; nonce: string; createdAt: Date }) {
   return [
-    'Yieldfield',
+    'Battle Bloom',
     request.mode === 'link' ? 'Link this wallet to my farm.' : 'Sign in to my farm with this wallet.',
     `Code: ${request.short}`,
     `Nonce: ${request.nonce}`,
