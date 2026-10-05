@@ -7,8 +7,9 @@ import { usePathname } from 'next/navigation';
 export function SiteHeader() {
   const path = usePathname();
   const home = path === '/';
-  // The dark pages (the leaderboards) get a dark bar; the home page's floats over its picture.
-  const look = home ? ' over' : path.startsWith('/leaderboard') ? ' dark' : '';
+  const invitation = /^\/ref(=|%3D)/i.test(path);
+  // The dark pages (the leaderboards) get a dark bar; the home page's and an invitation's float over their picture.
+  const look = home || invitation ? ' over' : path.startsWith('/leaderboard') ? ' dark' : '';
   const link = (href: string, label: string) => (
     <Link href={href} className={path === href ? 'active' : undefined}>
       {label}

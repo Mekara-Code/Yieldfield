@@ -7,6 +7,8 @@ import { DEFAULT_GEM_PACKS, publicDefs, type GemPack } from './defs';
 import { activeWolfEvent, wolfSettings } from '../events';
 import { addXp, apply, combatPower, healthNow, maxHealth, skillPointsFree, wolfOf, type Action, type Outcome, type Signal, type WolfEventCtx } from './rules';
 import { isServerFarm, migrate, newFarm, withDefaults, type Farm } from './state';
+import { afterInviteeAction } from '../referrals';
+import { levelForXp } from './defs';
 
 /**
  * Doing an action for a player: the farm (and their BLOOM, gems and reputation) as the server has
@@ -150,7 +152,7 @@ export async function performAction(userId: string, actionId: string, action: Ac
     const now = nowSeconds();
     const [row, user] = await Promise.all([
       prisma.farm.findUnique({ where: { userId } }),
-      prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { ...STANDING_SELECT, username: true, bloom: true, gems: true, character: true } }),
+      prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { ...STANDING_SELECT, username: true, bloom: true, gems: true, character: true, referredById: true, vipBoughtAt: true } }),
     ]);
     if (!row || !isServerFarm(row.state)) {
       return { status: 409, body: { error: 'Your farm isn\'t loaded yet', code: 'no_farm' } };
@@ -243,7 +245,9 @@ export async function performAction(userId: string, actionId: string, action: Ac
         let vipUntil = user.vipUntil;
         if (out.vipDays) {
           const from = isVip(user.vipUntil) ? user.vipUntil!.getTime() : Date.now();
-          const next = await tx.user.update({ where: { id: userId }, data: { vipUntil: new Date(from + out.vipDays * 86_400_000) }, select: { vipUntil: true } });
+          // Bought (not given): the first time counts for whoever invited them.
+          const bought = action.type === 'buy_vip' && !user.vipBoughtAt ? { vipBoughtAt: new Date() } : {};
+          const next = await tx.user.update({ where: { id: userId }, data: { vipUntil: new Date(from + out.vipDays * 86_400_000), ...bought }, select: { vipUntil: true } });
           vipUntil = next.vipUntil;
         }
         // The market: a listing put up, bought (the seller is paid now) or taken back, and those run out.
@@ -297,6 +301,8 @@ export async function performAction(userId: string, actionId: string, action: Ac
         return { bloom, gems, vipUntil, revision: row.revision + 1 };
       });
       const changedStanding = out.vipDays ? await standing({ ...source, vipUntil: saved.vipUntil }) : undefined;
+      // An invitee who just played enough, or bought VIP for the first time, may have earned their inviter a reward.
+      afterInviteeAction(user.referredById, levelForXp(before.xp), levelForXp(farm.xp), action.type === 'buy_vip' && !!out.vipDays && !user.vipBoughtAt);
       return {
         status: 200,
         body: {

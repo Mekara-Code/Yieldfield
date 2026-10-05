@@ -1,15 +1,34 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { setAccessToken } from '../lib/client';
 
 type Mode = 'login' | 'register';
 
-/** Sign in or make an account (the home page). className styles the card ("card glass" over the dark home page). */
-export function AuthCard({ className = 'card' }: { className?: string }) {
+const REF_KEY = 'bb_ref';
+
+/**
+ * Sign in or make an account (the home page, an invitation's page). className styles the card ("card glass"
+ * over the dark pages). invitedBy: the farmer whose link this is: the form opens on a new account, and the
+ * invitation is kept (for a sign-up later on this browser too) and sent with the new account.
+ */
+export function AuthCard({ className = 'card', invitedBy }: { className?: string; invitedBy?: string }) {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>('login');
+  const [mode, setMode] = useState<Mode>(invitedBy ? 'register' : 'login');
+  const [ref, setRef] = useState(invitedBy ?? '');
+
+  useEffect(() => {
+    try {
+      if (invitedBy) {
+        localStorage.setItem(REF_KEY, invitedBy);
+      } else {
+        setRef(localStorage.getItem(REF_KEY) ?? '');
+      }
+    } catch {
+      // storage blocked: the invitation still goes with a sign-up from this page
+    }
+  }, [invitedBy]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -25,7 +44,7 @@ export function AuthCard({ className = 'card' }: { className?: string }) {
     const body =
       mode === 'login'
         ? { login: form.get('login'), password: form.get('password'), client: 'web' }
-        : { username: form.get('username'), email: form.get('email'), password: form.get('password'), client: 'web' };
+        : { username: form.get('username'), email: form.get('email'), password: form.get('password'), client: 'web', ...(ref ? { ref } : {}) };
     try {
       const response = await fetch(`/api/auth/${mode}`, {
         method: 'POST',
@@ -56,6 +75,11 @@ export function AuthCard({ className = 'card' }: { className?: string }) {
           Create account
         </button>
       </div>
+      {mode === 'register' && ref && (
+        <p className="invited">
+          Invited by <b>{ref}</b>
+        </p>
+      )}
       <form method="post" onSubmit={submit}>
         {mode === 'login' ? (
           <>

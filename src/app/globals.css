@@ -836,3 +836,201 @@ th {
   background: #3a1216;
   border-color: #6b1f27;
 }
+
+/* The farm page's invitations and X tasks (src/app/dashboard/Social.tsx). */
+.social-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.social-card .sub {
+  font-size: 13px;
+  margin: 18px 0 8px;
+}
+
+.ref-link {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.ref-link input {
+  flex: 1;
+  min-width: 0;
+}
+
+.share-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 14px;
+}
+
+.share-row .button {
+  padding: 8px 14px;
+  font-size: 14px;
+}
+
+.ref-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 8px;
+  margin: 6px 0 14px;
+}
+
+.ref-stats div {
+  background: var(--ground);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.ref-stats b {
+  display: block;
+  font-size: 20px;
+}
+
+.ref-stats span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ref-table {
+  width: 100%;
+  margin-top: 14px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.ref-table th,
+.ref-table td {
+  text-align: left;
+  padding: 7px 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ref-rewards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ref-rewards li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.ref-rewards time {
+  margin-left: auto;
+}
+
+.x-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.x-account img {
+  border-radius: 50%;
+}
+
+.x-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.x-step {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+
+.x-step.done {
+  opacity: 0.7;
+}
+
+.x-step-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.x-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--line);
+  font-weight: 800;
+  color: var(--green);
+  flex: none;
+}
+
+.x-step.done .x-check {
+  border-color: var(--green);
+}
+
+.x-coins {
+  margin-left: auto;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.x-step-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.x-step-body .button {
+  padding: 8px 14px;
+  font-size: 14px;
+}
+
+.x-card-preview {
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+}
+
+.x-good {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.admin-row {
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  gap: 4px 12px;
+  align-items: center;
+}
+
+.admin-row label {
+  margin: 8px 0 0;
+}
+
+.admin-row .small {
+  grid-column: 1 / -1;
+}
+
+label.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+}
+
+label.check input {
+  width: auto;
+}

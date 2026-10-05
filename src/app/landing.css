@@ -998,3 +998,71 @@ body:has(.landing) {
     animation: none;
   }
 }
+
+/* ------------------------------------------------------------------ an invitation (/ref=name) */
+
+.invite-inner {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 48px;
+  align-items: center;
+}
+
+.invite-title {
+  font-family: 'Display', system-ui, sans-serif;
+  font-weight: 900;
+  font-size: clamp(36px, 5.4vw, 62px);
+  line-height: 1.04;
+  letter-spacing: -0.015em;
+  margin: 12px 0 18px;
+}
+
+.invite-title span {
+  color: var(--l-gold);
+}
+
+.invite-title em {
+  font-style: normal;
+  background: linear-gradient(180deg, #fff8dc 0%, #ffd66e 48%, #f29a2c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.invite-card {
+  display: block;
+  width: 100%;
+  max-width: 560px;
+  height: auto;
+  margin-top: 26px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.invite-join {
+  width: 100%;
+  max-width: 440px;
+  justify-self: end;
+}
+
+.card .invited {
+  margin: -6px 0 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.card .invited b {
+  color: var(--gold);
+}
+
+@media (max-width: 900px) {
+  .invite-inner {
+    grid-template-columns: 1fr;
+  }
+
+  .invite-join {
+    justify-self: stretch;
+    max-width: none;
+  }
+}

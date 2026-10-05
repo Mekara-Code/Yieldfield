@@ -46,6 +46,64 @@ model User {
   currencyLog     CurrencyLog[]
   sales           Listing[]     @relation("sales")
   purchases       Listing[]     @relation("purchases")
+  /// Who invited them (their link, domain/ref=name, or the name typed at sign-up) and when (src/lib/referrals.ts).
+  referredById    String?
+  referredBy      User?         @relation("referrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals       User[]        @relation("referrals")
+  referredAt      DateTime?
+  /// When their inviter got the coins for them (once they played a little); null before, and for invitees past the rewarded number.
+  referralCoinsAt DateTime?
+  /// When they first bought VIP themselves (VIP given by an admin doesn't count): their inviter's BLOOM counts these.
+  vipBoughtAt     DateTime?
+  /// Groups of VIP buyers among their invitees already paid in BLOOM.
+  referralBloomGroups Int       @default(0)
+  referralRewards ReferralReward[]
+  /// The X (Twitter) account linked by OAuth 2.0: one farm each; its picture goes on the player's share card.
+  xId             String?       @unique
+  xUsername       String?
+  xName           String?
+  xAvatar         String?
+  xLinkedAt       DateTime?
+  xClaims         XTaskClaim[]
+
+  @@index([referredById])
+}
+
+/// A reward for inviting players: coins for an invitee who played a little, BLOOM for each group of invitees who bought VIP.
+model ReferralReward {
+  id        String   @id @default(cuid())
+  /// The inviter.
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// "coins" or "bloom".
+  kind      String
+  amount    Int
+  /// Coins: the invitee it was for. BLOOM: how many VIP invitees it counts up to (in note).
+  inviteeId String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+/// A task on X done and paid (coins): linking the account, following the game's page, liking its post, posting the share card.
+model XTaskClaim {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// "connect", "follow", "like" or "share".
+  task      String
+  /// What it was for: the page's id (follow), the post's id (like), "" (connect, share).
+  target    String   @default("")
+  /// The X account that did it (one X account is paid once for each task, whichever farm it's linked to).
+  xId       String
+  coins     Int
+  /// The player's post (share).
+  proof     String?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, task, target])
+  @@index([xId, task, target])
 }
 
 /// A sign-in on one device: the refresh token (stored hashed) that keeps it signed in.

@@ -235,6 +235,9 @@ export default function AdminPage() {
         <Link className="pill" href="/admin/updates">
           App updates →
         </Link>
+        <Link className="pill" href="/admin/social">
+          X tasks and invitations →
+        </Link>
         {totals && (
           <span className="pill">
             {totals.paidOrders} paid · ${totals.usd} · {totals.bloom.toLocaleString()} BLOOM · {totals.gems.toLocaleString()} gems · {totals.fromLinkedWallets} from linked wallets

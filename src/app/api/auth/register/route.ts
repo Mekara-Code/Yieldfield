@@ -1,6 +1,7 @@
 import { hashPassword, issueTokens } from '../../../../lib/auth';
 import { prisma } from '../../../../lib/db';
 import { clientAddress, problem, rateLimited, readBody, RegisterBody, tokensResponse } from '../../../../lib/http';
+import { inviterFor } from '../../../../lib/referrals';
 
 export const runtime = 'nodejs';
 
@@ -12,7 +13,7 @@ export async function POST(request: Request) {
   if ('response' in body) {
     return body.response;
   }
-  const { username, email, password, client, character } = body.data;
+  const { username, email, password, client, character, ref } = body.data;
   const taken = await prisma.user.findFirst({
     where: { OR: [{ username: { equals: username, mode: 'insensitive' } }, { email }] },
     select: { email: true },
@@ -20,9 +21,12 @@ export async function POST(request: Request) {
   if (taken) {
     return problem(409, taken.email === email ? 'That email already has an account' : 'That name is taken');
   }
+  // Invited by someone (not themselves): it counts for that farmer's rewards (src/lib/referrals.ts).
+  const inviter = await inviterFor(ref);
+  const invited = inviter && inviter.username.toLowerCase() !== username.toLowerCase() ? { referredById: inviter.id, referredAt: new Date() } : {};
   try {
     const user = await prisma.user.create({
-      data: { username, email, passwordHash: await hashPassword(password), lastLoginAt: new Date(), character: character ?? null, farm: { create: {} } },
+      data: { username, email, passwordHash: await hashPassword(password), lastLoginAt: new Date(), character: character ?? null, farm: { create: {} }, ...invited },
     });
     return tokensResponse(await issueTokens(user, client), client, 201);
   } catch (error) {

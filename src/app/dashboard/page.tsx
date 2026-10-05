@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, getAccessToken, itemName, refreshAccess, setAccessToken } from '../../lib/client';
 import { BloomIcon, CoinIcon, GemIcon, MONEY } from '../../components/Bloom';
 import { HistoryCard, MarketCard, SkillsCard, StandingCard, type MeAccount } from './Account';
+import { InviteCard, XTasksCard } from './Social';
 
 /** The farm as the server keeps it (src/lib/game/state.ts): times are Unix seconds, the server's clock. */
 interface Plot {
@@ -180,6 +181,10 @@ function describe(e: FarmEvent) {
       return `Skill: ${String(d.track).replace('.', ' ')} level ${d.level}`;
     case 'skill_reset':
       return `Reset the skills (${d.points} points back)`;
+    case 'referral_reward':
+      return `Friends you invited earned you ${[Number(d.coins) ? `${d.coins} coins` : '', Number(d.bloom) ? `${d.bloom} ${MONEY}` : ''].filter(Boolean).join(' and ')}`;
+    case 'x_task':
+      return `Done on X: ${({ connect: 'linked your X account', follow: 'followed the game\'s page', like: 'liked the game\'s post', share: 'posted your farm card' } as Record<string, string>)[String(d.task)] ?? d.task} · +${d.coins} coins`;
     case 'discord':
       return `Linked Discord: ${d.name} (+${d.reputation} reputation)`;
     case 'market_list':
@@ -404,6 +409,8 @@ export default function Dashboard() {
             <p className="muted">Sign into the game with this account: your farm appears here as soon as it starts.</p>
           </div>
           <StandingCard me={me} onChange={reloadMe} />
+          <InviteCard />
+          {me && <XTasksCard username={me.username} />}
         </div>
       ) : (
         <div className="grid">
@@ -582,6 +589,8 @@ export default function Dashboard() {
             )}
           </div>
           <HistoryCard />
+          <InviteCard />
+          {me && <XTasksCard username={me.username} />}
         </div>
       )}
     </>

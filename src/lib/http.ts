@@ -85,6 +85,8 @@ export const RegisterBody = z.object({
   client: ClientKind,
   /** Who they'll play (the game asks at sign-up); fixed after, but for a price. */
   character: z.enum(CHARACTER_NAMES).optional(),
+  /** Who invited them: a farmer's name (their link, or the game's "invited by" field). */
+  ref: z.string().trim().max(40).optional(),
 });
 
 export const LoginBody = z.object({
