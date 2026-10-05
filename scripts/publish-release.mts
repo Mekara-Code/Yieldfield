@@ -75,9 +75,12 @@ const mb = (bytes: number) => `${(bytes / 1048576).toFixed(1)} MB`;
       return `dry:${pathname}`;
     }
     console.log(`  uploading ${pathname} (${mb(size)})`);
+    // Named after its content: a retry (the library's own, or this loop's) replaces the same file, never a second copy.
+    const bytes = await readFile(local);
+    const named = `${base}-${createHash('sha1').update(bytes).digest('hex').slice(0, 12)}${extension}`;
     for (let attempt = 1; ; attempt++) {
       try {
-        const blob = await put(pathname, await readFile(local), { access: 'public', addRandomSuffix: true, contentType, multipart: size > 8 * 1048576, token: key });
+        const blob = await put(named, bytes, { access: 'public', addRandomSuffix: false, allowOverwrite: true, contentType, multipart: size > 8 * 1048576, token: key });
         uploaded += size;
         files.push({ pathname: blob.pathname, url: blob.url, size, used: false });
         return blob.url;
@@ -95,6 +98,18 @@ const mb = (bytes: number) => `${(bytes / 1048576).toFixed(1)} MB`;
   const apkSize = (await stat(apk)).size;
   const apkUrl = await ensure(`releases/BattleBloom-${name}.apk`, apk, 'application/vnd.android.package-archive');
   console.log(`APK ${mb(apkSize)}: ${apkUrl}`);
+
+  // Second copies of this APK (an upload tried twice) are removed first (room for the rest): only ones no version uses.
+  const copies = files.filter((f) => f.pathname.startsWith(`releases/BattleBloom-${name}-`) && f.pathname.endsWith('.apk') && f.size === apkSize && f.url !== apkUrl && !f.used);
+  if (copies.length) {
+    if (dry) {
+      console.log(`would remove ${copies.length} second copy(ies) of the APK (${mb(copies.reduce((s, f) => s + f.size, 0))})`);
+    } else {
+      const { removed } = await call<{ removed: string[] }>('DELETE', { urls: copies.map((f) => f.url) });
+      console.log(`removed ${removed.length} second copy(ies) of the APK (${mb(copies.reduce((s, f) => s + f.size, 0))})`);
+    }
+  }
+
 
   // The patches from earlier versions (their codes from each file's header).
   const deltas: { from: number; url: string; size: number }[] = [];
@@ -139,22 +154,13 @@ const mb = (bytes: number) => `${(bytes / 1048576).toFixed(1)} MB`;
   }
   console.log(`content packs: ${packs.size} (${[...packs.values()].reduce((n, p) => n + p.files.length, 0)} files, ${reused} used again from earlier versions); uploaded now ${mb(uploaded)}`);
 
-  // Second copies of this APK (an upload tried twice) are removed: only ones no version uses.
-  const copies = files.filter((f) => f.pathname.startsWith(`releases/BattleBloom-${name}-`) && f.pathname.endsWith('.apk') && f.size === apkSize && f.url !== apkUrl && !f.used);
-  if (copies.length) {
-    if (dry) {
-      console.log(`would remove ${copies.length} second copy(ies) of the APK (${mb(copies.reduce((s, f) => s + f.size, 0))})`);
-    } else {
-      const { removed } = await call<{ removed: string[] }>('DELETE', { urls: copies.map((f) => f.url) });
-      console.log(`removed ${removed.length} second copy(ies) of the APK (${mb(copies.reduce((s, f) => s + f.size, 0))})`);
-    }
-  }
-
   if (dry) {
     console.log('dry run: nothing published');
     return;
   }
-  const result = await call<{ releases: { versionCode: number; versionName: string; status: string }[] }>('POST', {
+  // A version published already (its files lost, or new patches): its files are put right.
+  const exists = state.releases.some((r) => r.versionCode === code);
+  const result = await call<{ releases: { versionCode: number; versionName: string; status: string }[] }>(exists ? 'PATCH' : 'POST', {
     versionCode: code,
     versionName: name,
     notes,
@@ -165,7 +171,7 @@ const mb = (bytes: number) => `${(bytes / 1048576).toFixed(1)} MB`;
     deltas,
     contentPacks: [...packs.values()],
   });
-  console.log(`published: ${result.releases.map((r) => `${r.versionName} (${r.status})`).join(', ')}`);
+  console.log(`${exists ? 'repaired' : 'published'}: ${result.releases.map((r) => `${r.versionName} (${r.status})`).join(', ')}`);
 })().catch((error) => {
   console.error('FAILED', error.message);
   process.exit(1);

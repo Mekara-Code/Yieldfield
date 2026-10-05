@@ -30,7 +30,11 @@ export async function POST(request: Request) {
       onBeforeGenerateToken: async () => ({
         allowedContentTypes: ['application/vnd.android.package-archive', 'application/octet-stream'],
         maximumSizeInBytes: 2_000_000_000,
-        addRandomSuffix: true,
+        // The page names each file after its content (its size, date or SHA-1): the Blob library retries a part
+        // or a whole upload that fails near its end, and with a random suffix each try left a second copy (two
+        // 449 MB APKs once filled the store). The same name again just replaces the same file.
+        addRandomSuffix: false,
+        allowOverwrite: true,
       }),
       onUploadCompleted: async () => {},
     });

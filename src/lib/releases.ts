@@ -186,6 +186,19 @@ export async function publishRelease(data: z.infer<typeof NewReleaseSchema>, cre
   return null;
 }
 
+/** Replaces a published version's files (APK address and size, patches, content packs) and notes: false if there's none with its code. */
+export async function replaceReleaseFiles(data: z.infer<typeof NewReleaseSchema>) {
+  const row = await prisma.appRelease.findFirst({ where: { versionCode: data.versionCode, platform: 'android' } });
+  if (!row) {
+    return false;
+  }
+  await prisma.appRelease.update({
+    where: { id: row.id },
+    data: { url: data.url, size: data.size ?? null, storage: data.storage, deltas: data.deltas as object[], contentPacks: data.contentPacks as object[], ...(data.notes ? { notes: data.notes } : {}) },
+  });
+  return true;
+}
+
 /**
  * Publishing from the command line (scripts/publish-release.mts) is allowed with the release files' own
  * store key (the Blob store's read-write token: whoever has it can already replace every release file).

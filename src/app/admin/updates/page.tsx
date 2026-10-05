@@ -223,7 +223,7 @@ export default function UpdatesPage() {
           url = there;
         } else {
           setBusy(`Uploading ${name} to Vercel Blob…`);
-          const blob = await upload(`releases/${name}`, file, {
+          const blob = await upload(`releases/BattleBloom-${versionName.trim()}-${file.size}-${file.lastModified.toString(36)}.apk`, file, {
             access: 'public',
             handleUploadUrl: '/api/admin/releases/upload',
             headers: { Authorization: `Bearer ${bearer}` },
@@ -251,7 +251,7 @@ export default function UpdatesPage() {
         } else if (where === 'disk') {
           fileUrl = (await putOnServer(file, `c${versionCode}-${file.name}`, bearer, () => {})).url;
         } else {
-          const blob = await upload(`content/${versionCode}/${file.name}`, file, {
+          const blob = await upload(`content/${versionCode}/${base}-${sha1.slice(0, 12)}${extension}`, file, {
             access: 'public',
             handleUploadUrl: '/api/admin/releases/upload',
             headers: { Authorization: `Bearer ${bearer}` },
@@ -277,7 +277,7 @@ export default function UpdatesPage() {
           deltas.push({ from: patch.from, url: already(`releases/BattleBloom-${patch.from}-to-${patch.to}-`, '.yfd', patch.file.size)!, size: patch.file.size });
         } else if (where === 'blob') {
           setBusy(`Uploading the patch from code ${patch.from} to Vercel Blob…`);
-          const blob = await upload(`releases/${patchName}`, patch.file, {
+          const blob = await upload(`releases/BattleBloom-${patch.from}-to-${patch.to}-${patch.file.size}.yfd`, patch.file, {
             access: 'public',
             handleUploadUrl: '/api/admin/releases/upload',
             headers: { Authorization: `Bearer ${bearer}` },

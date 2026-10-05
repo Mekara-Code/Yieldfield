@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { json, problem, readBody } from '../../../../../lib/http';
-import { blobFiles, filesInUse, listReleases, NewReleaseSchema, publishRelease, releaseKeyOk, removeUnusedBlobs } from '../../../../../lib/releases';
+import { blobFiles, filesInUse, listReleases, NewReleaseSchema, publishRelease, releaseKeyOk, removeUnusedBlobs, replaceReleaseFiles } from '../../../../../lib/releases';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,6 +30,21 @@ export async function POST(request: Request) {
   const refused = await publishRelease(body.data, 'release script');
   if (refused) {
     return problem(400, refused);
+  }
+  return json({ releases: await listReleases() });
+}
+
+/** Puts a published version's files right (its APK lost and uploaded again, new patches): by its version code. */
+export async function PATCH(request: Request) {
+  if (!releaseKeyOk(request)) {
+    return problem(403, 'Not allowed');
+  }
+  const body = await readBody(request, NewReleaseSchema);
+  if ('response' in body) {
+    return body.response;
+  }
+  if (!(await replaceReleaseFiles(body.data))) {
+    return problem(404, `No version with code ${body.data.versionCode}`);
   }
   return json({ releases: await listReleases() });
 }
